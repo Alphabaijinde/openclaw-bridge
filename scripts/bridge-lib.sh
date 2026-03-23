@@ -16,20 +16,23 @@ _load_env() {
     while IFS='=' read -r key val; do
         [[ "$key" =~ ^# ]] && continue
         [[ -z "$key" ]] && continue
-        [[ "$key" =~ ^\[ || "$key" =~ \" ]] && continue
-        key="${key#"${key%%[![:space:]]*}"}"
-        key="${key%"${key##*[![:space:]]}"}"
+        # 清除空格
+        key="$(echo "$key" | xargs)"
         [[ -z "$key" ]] && continue
         [[ "$key" == "BRIDGE_ROOT" ]] && continue
-        val="${val//$'\r'/}"
-        val="${val#"${val%%[![:space:]]*}"}"
-        val="${val%"${val##*[![:space:]]}"}"
-        [[ "$val" == \"*\" ]] && val="${val:1:-1}"
-        [[ "$val" == \'*\' ]] && val="${val:1:-1}"
-        [[ -z "$key" ]] && continue
-        if [[ -z "${!key:-}" ]]; then
-            declare -g "$key" 2>/dev/null || true
-            eval "$key=\"\$val\""
+        
+        # 处理 val，删除首尾引号和回车
+        val="$(echo "$val" | sed 's/\r$//' | xargs)"
+        # 删除首尾引号（如果成对出现）
+        if [[ "$val" =~ ^\".*\"$ ]] || [[ "$val" =~ ^\'.*\'$ ]]; then
+            val="${val:1:-1}"
+        fi
+        
+        if [[ -n "$key" ]]; then
+            # 如果变量未设置，则设置它
+            if [[ -z "${!key:-}" ]]; then
+                export "$key"="$val"
+            fi
         fi
     done < "$env_file"
 }
