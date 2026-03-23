@@ -1,0 +1,25 @@
+# 敏感配置（不要提交）
+bridge.env
+
+# 日志
+logs/*.log
+
+# 临时文件
+*.tmp
+*.swp
+*~
+
+# 任务数据（每个环境不同步）
+tasks/inbox/*.json
+tasks/running/*.json
+tasks/done/*.json
+tasks/failed/*.json
+artifacts/summaries/*.md
+
+# 密钥
+*.pem
+*.key
+*_deploy_key
+
+# 系统文件
+.DS_Store
