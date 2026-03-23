@@ -6,30 +6,45 @@
 
 set -euo pipefail
 
-# ---- 路径配置 ----
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BRIDGE_ROOT="$(dirname "$SCRIPT_DIR")"
 
-# ---- 加载环境配置 ----
-# 优先使用 bridge.env，其次 bridge.env.example
-if [[ -f "${BRIDGE_ROOT}/bridge.env" ]]; then
-    set -a
-    source "${BRIDGE_ROOT}/bridge.env"
-    set +a
-elif [[ -f "${BRIDGE_ROOT}/bridge.env.example" ]]; then
-    set -a
-    source "${BRIDGE_ROOT}/bridge.env.example"
-    set +a
-fi
+# ---- 加载环境配置（不影响 BRIDGE_ROOT） ----
+_load_env() {
+    local env_file="$1"
+    [[ -f "$env_file" ]] || return 0
+    while IFS='=' read -r key val; do
+        [[ "$key" =~ ^# ]] && continue
+        [[ -z "$key" ]] && continue
+        [[ "$key" =~ ^\[ || "$key" =~ \" ]] && continue
+        key="${key#"${key%%[![:space:]]*}"}"
+        key="${key%"${key##*[![:space:]]}"}"
+        [[ -z "$key" ]] && continue
+        [[ "$key" == "BRIDGE_ROOT" ]] && continue
+        val="${val//$'\r'/}"
+        val="${val#"${val%%[![:space:]]*}"}"
+        val="${val%"${val##*[![:space:]]}"}"
+        [[ "$val" == \"*\" ]] && val="${val:1:-1}"
+        [[ "$val" == \'*\' ]] && val="${val:1:-1}"
+        [[ -z "$key" ]] && continue
+        if [[ -z "${!key:-}" ]]; then
+            declare -g "$key" 2>/dev/null || true
+            eval "$key=\"\$val\""
+        fi
+    done < "$env_file"
+}
 
-# ---- 路径默认值 ----
-SCHEMAS_DIR="${BREMAS_DIR:-${BRIDGE_ROOT}/schemas}"
-SCHEMAS_DIR="${SCHEMAS_DIR:-${BRIDGE_ROOT}/schemas}"
+_load_env "${BRIDGE_ROOT}/bridge.env"
+_load_env "${BRIDGE_ROOT}/bridge.env.example"
+
+SCHEMAS_DIR="${BRIDGE_ROOT}/schemas"
 BRIDGE_TASKS_DIR="${BRIDGE_TASKS_DIR:-${BRIDGE_ROOT}/tasks}"
 BRIDGE_ARTIFACTS_DIR="${BRIDGE_ARTIFACTS_DIR:-${BRIDGE_ROOT}/artifacts}"
 BRIDGE_LOGS_DIR="${BRIDGE_LOGS_DIR:-${BRIDGE_ROOT}/logs}"
 BRIDGE_GIT_REMOTE="${BRIDGE_GIT_REMOTE:-}"
 BRIDGE_GIT_BRANCH="${BRIDGE_GIT_BRANCH:-main}"
+ALLOWED_TASK_TYPES="${ALLOWED_TASK_TYPES:-status-summary,public-research,daily-report,obsidian-write,state-sync}"
+ALLOWED_ACTIONS_DEFAULT="${ALLOWED_ACTIONS_DEFAULT:-read_status,summarize,write_obsidian,fetch_public}"
 
 # ---- 日志函数 ----
 log() {
@@ -286,24 +301,30 @@ scan_sensitive() {
 company_risk_check() {
     local task_file="$1"
     
-    # 读取 task_type 和 instruction
     local task_type instruction
     task_type=$(jq -r '.task_type // ""' "$task_file")
     instruction=$(jq -r '.payload.instruction // ""' "$task_file")
     
-    # 检查 task_type 白名单
-    local allowed_types="status-summary public-research daily-report obsidian-write state-sync"
-    if [[ ! " $allowed_types " =~ " $task_type " ]]; then
+    IFS=',' read -ra _allowed_types <<< "${ALLOWED_TASK_TYPES:-status-summary,public-research,daily-report,obsidian-write,state-sync}"
+    local match=0
+    for allowed in "${_allowed_types[@]}"; do
+        [[ "$allowed" == "$task_type" ]] && match=1 && break
+    done
+    if [[ "$match" -eq 0 ]]; then
         echo "FAIL: task_type '$task_type' not in whitelist"
         return 1
     fi
     
-    # 检查 allowed_actions 白名单
-    local allowed_actions
-    allowed_actions=$(jq -r '.payload.allowed_actions // [] | join(" ")' "$task_file")
-    local valid_actions="read_status summarize write_obsidian fetch_public"
-    for action in $allowed_actions; do
-        if [[ ! " $valid_actions " =~ " $action " ]]; then
+    local allowed_actions_str
+    allowed_actions_str=$(jq -r '.payload.allowed_actions // [] | join(",")' "$task_file")
+    IFS=',' read -ra _allowed_actions <<< "${allowed_actions_str}"
+    IFS=',' read -ra _valid_actions <<< "${ALLOWED_ACTIONS_DEFAULT:-read_status,summarize,write_obsidian,fetch_public}"
+    for action in "${_allowed_actions[@]}"; do
+        local valid=0
+        for va in "${_valid_actions[@]}"; do
+            [[ "$va" == "$action" ]] && valid=1 && break
+        done
+        if [[ "$valid" -eq 0 ]]; then
             echo "FAIL: allowed_actions '$action' not permitted"
             return 1
         fi

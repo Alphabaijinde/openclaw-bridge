@@ -137,20 +137,6 @@ claim_and_process() {
         return 1
     fi
     
-    # --- 检查 task_type 白名单 ---
-    local task_type
-    task_type=$(jq -r '.task_type // ""' "$task_file")
-    if [[ -n "${ALLOWED_TASK_TYPES:-}" ]]; then
-        if [[ ! " ${ALLOWED_TASK_TYPES} " =~ " ${task_type} " ]]; then
-            err "task_type '$task_type' 不在白名单"
-            update_task_status "$task_file" "failed" \
-                "unsafe_request" \
-                "task_type not in whitelist" \
-                "Check ALLOWED_TASK_TYPES in bridge.env"
-            return 1
-        fi
-    fi
-    
     # --- 领取任务 ---
     log_info "Claiming task: $task_id"
     claim_task "$task_file" "$EXECUTOR" "$LEASE_TTL"
