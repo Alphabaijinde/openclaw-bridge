@@ -103,7 +103,7 @@ execute_task() {
         mv "$running_file" "${BRIDGE_TASKS_DIR}/done/${TASK_ID}.json"
     fi
     
-    feishu_notify "success" "任务执行完成" "任务  已完成，结果摘要长度  字符"
+    feishu_notify "success" "任务执行完成" "任务 $TASK_ID 已完成，结果摘要长度 $word_count 字符"
 }
 
 # ---- 各类型任务执行器 ----
