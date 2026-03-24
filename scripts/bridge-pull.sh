@@ -122,7 +122,7 @@ claim_and_process() {
             "$check_result" \
             "Task exceeds Phase 1 safety bounds"
         
-        feishu_notify "error" "任务被拒绝" "$task_id: $check_result"
+        feishu_notify "error" "任务被拒绝" "任务  不符合 Phase 1 安全要求："
         return 1
         
     elif [[ $check_status -eq 2 ]]; then
@@ -133,7 +133,7 @@ claim_and_process() {
             "$check_result" \
             "Human review required before execution"
         
-        feishu_notify "warn" "任务需人工审核" "$task_id: $check_result"
+        feishu_notify "warn" "任务需人工审核" "任务  需要人工审核："
         return 1
     fi
     

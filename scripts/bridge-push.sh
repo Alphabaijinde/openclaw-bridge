@@ -175,7 +175,7 @@ else
     # 敏感信息扫描
     if ! scan_sensitive "$INSTRUCTION"; then
         warn "指令可能包含敏感信息，请检查任务单"
-        feishu_notify "warn" "任务含敏感词" "$TASK_ID: $TITLE"
+        feishu_notify "warn" "任务含敏感词" "任务  包含敏感词："
     fi
 fi
 
@@ -202,7 +202,7 @@ if [[ "$PUSH_NOW" == "true" ]]; then
     
     if git_push "$BRIDGE_ROOT" "$BRIDGE_GIT_BRANCH" "$COMMIT_MSG"; then
         ok "已推送: $COMMIT_MSG"
-        feishu_notify "info" "任务已推送" "${TASK_ID:-N/A} 已推送到桥接仓库"
+        feishu_notify "info" "任务已推送" "任务 N/A 已成功推送到桥接仓库"
     else
         err "推送失败"
         exit 1
