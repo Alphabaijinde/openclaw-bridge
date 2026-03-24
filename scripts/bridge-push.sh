@@ -175,7 +175,7 @@ else
     # 敏感信息扫描
     if ! scan_sensitive "$INSTRUCTION"; then
         warn "指令可能包含敏感信息，请检查任务单"
-        feishu_notify "warn" "任务含敏感词" "任务  包含敏感词："
+        feishu_notify "warn" "任务含敏感词 [$OPENCLAW_SIDE]" "任务 $TASK_ID 包含敏感词：$TITLE"
     fi
 fi
 
