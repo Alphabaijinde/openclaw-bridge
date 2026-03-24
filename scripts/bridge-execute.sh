@@ -95,6 +95,7 @@ execute_task() {
     
     log_info "Artifact saved: $summary_file"
     
+    local reclassified="false"
     # 写结果回任务单
     write_result "$status" "$summary" "$word_count" "$artifact_id" "$STARTED_AT"
     
