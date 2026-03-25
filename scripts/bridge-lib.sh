@@ -244,7 +244,7 @@ feishu_notify() {
         return 0
     fi
     
-    log "DEBUG" "Feishu notification: level=$level title=$title"
+    log "DEBUG" "Feishu: level=$level title=$title"
     
     local color
     case "$level" in
@@ -274,11 +274,11 @@ feishu_notify() {
         }')
     
     local curl_result
-    curl_result=$(curl -s -w "%{http_code}" -X POST "${FEISHU_WEBHOOK_URL}" \
+    curl_result=$(curl -s -X POST "${FEISHU_WEBHOOK_URL}" \
         -H "Content-Type: application/json" \
         -d "$payload" 2>&1)
     
-    if [[ "$curl_result" == "200" ]]; then
+    if echo "$curl_result" | grep -q '"code":0'; then
         log "DEBUG" "Feishu notification sent successfully"
     else
         log_warn "Feishu notification failed: $curl_result"
