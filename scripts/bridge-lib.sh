@@ -244,6 +244,8 @@ feishu_notify() {
         return 0
     fi
     
+    log "DEBUG" "Feishu notification: level=$level title=$title"
+    
     local color
     case "$level" in
         error)  color="red" ;;
