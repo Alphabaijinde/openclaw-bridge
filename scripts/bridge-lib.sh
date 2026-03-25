@@ -34,8 +34,8 @@ _load_env() {
     done < "$env_file"
 }
 
-_load_env "${BRIDGE_ROOT}/bridge.env"
 _load_env "${BRIDGE_ROOT}/bridge.env.example"
+_load_env "${BRIDGE_ROOT}/bridge.env"
 
 SCHEMAS_DIR="${BRIDGE_ROOT}/schemas"
 BRIDGE_TASKS_DIR="${BRIDGE_TASKS_DIR:-${BRIDGE_ROOT}/tasks}"
