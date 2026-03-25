@@ -2,27 +2,53 @@
 
 公司与个人 OpenClaw 之间的任务流转中枢。
 
+## 核心理念
+
+- **任务池**：GitHub 仓库作为任务池（inbox/running/done）
+- **双向流转**：公司 ↔ 家里 双向任务流转
+- **异步执行**：两边不需要同时在线，任务提交后由执行方拉取并执行
+
 ## 架构
 
 ```
-家里 OpenClaw (home)
-      │
-      │ bridge-push.sh → tasks/inbox/
-      ↓
-Git 仓库 (bridge-repo)
-      │
-      │ bridge-pull.sh ← tasks/inbox/
-      ↓
-公司 OpenClaw (company)
-      │
-      │ bridge-execute.sh (执行 + 公司侧风险重判)
-      │
-      ↓
-结果回传 → tasks/done/ / tasks/failed/
-      │
-      ↓
-Git push → home 拉取 → bridge-sync.sh
+                    ┌─────────────────┐
+                    │  GitHub 仓库    │
+                    │  (任务池)       │
+                    └────────┬────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              │              │              │
+              ▼              │              ▼
+      ┌───────────────┐       │       ┌───────────────┐
+      │   公司侧      │       │       │    家里侧     │
+      │ bridge-push   │       │       │ bridge-push    │
+      │ bridge-pull   │       │       │ bridge-pull    │
+      │ + 执行任务    │       │       │ + 执行任务     │
+      └───────────────┘       │       └───────────────┘
+              │               │               │
+              └───────────────┼───────────────┘
+                              │
+                        Feishu 通知
 ```
+
+## 任务流转
+
+```
+发起方: bridge-push.sh --push
+        → 创建任务 JSON → Git Push → 仓库
+
+执行方: bridge-pull.sh --execute (cron 轮询)
+        → Git Pull → 领取任务 → 执行 → 写结果 → Git Push
+
+状态流转: inbox → running → done (或 failed)
+```
+
+## 双向任务流
+
+| 方向 | 发起方 | 执行方 | 场景 |
+|------|--------|--------|------|
+| 公司 → 家里 | 公司 push | 家里 pull+execute | 公司无法访问的资源 |
+| 家里 → 公司 | 家里 push | 公司 pull+execute | 公司侧执行的任务 |
 
 ## 目录结构
 
