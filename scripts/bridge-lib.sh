@@ -29,10 +29,7 @@ _load_env() {
         fi
         
         if [[ -n "$key" ]]; then
-            # 如果变量未设置，则设置它
-            if [[ -z "${!key:-}" ]]; then
-                export "$key"="$val"
-            fi
+            export "$key"="$val"
         fi
     done < "$env_file"
 }
