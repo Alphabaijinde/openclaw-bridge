@@ -273,9 +273,16 @@ feishu_notify() {
             }
         }')
     
-    curl -s -X POST "${FEISHU_WEBHOOK_URL}" \
+    local curl_result
+    curl_result=$(curl -s -w "%{http_code}" -X POST "${FEISHU_WEBHOOK_URL}" \
         -H "Content-Type: application/json" \
-        -d "$payload" >/dev/null
+        -d "$payload" 2>&1)
+    
+    if [[ "$curl_result" == "200" ]]; then
+        log "DEBUG" "Feishu notification sent successfully"
+    else
+        log_warn "Feishu notification failed: $curl_result"
+    fi
 }
 
 # ---- 任务计数统计 ----
