@@ -1,10 +1,24 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Bridge Task",
-  "description": "公司与个人 OpenClaw 桥接任务单 (Phase 1)",
+  "description": "公司与个人 OpenClaw 双向桥接任务单",
   "type": "object",
   "required": ["task_id", "idempotency_key", "source", "target", "title", "lane", "payload", "created_at"],
   "additionalProperties": false,
+  "oneOf": [
+    {
+      "properties": {
+        "source": { "const": "home" },
+        "target": { "const": "company" }
+      }
+    },
+    {
+      "properties": {
+        "source": { "const": "company" },
+        "target": { "const": "home" }
+      }
+    }
+  ],
   "properties": {
     "task_id": {
       "type": "string",
@@ -17,17 +31,22 @@
     },
     "source": {
       "type": "string",
-      "enum": ["home"],
-      "description": "Phase 1 仅支持 home -> company"
+      "enum": ["home", "company"],
+      "description": "任务发起侧"
     },
     "target": {
       "type": "string",
-      "enum": ["company"],
-      "description": "Phase 1 仅支持 home -> company"
+      "enum": ["home", "company"],
+      "description": "任务执行侧"
+    },
+    "flow_version": {
+      "type": "string",
+      "enum": ["v1", "v2"],
+      "default": "v2"
     },
     "requester": {
       "type": "string",
-      "default": "home-openclaw"
+      "default": "bridge-openclaw"
     },
     "title": {
       "type": "string",
@@ -36,7 +55,7 @@
     "lane": {
       "type": "string",
       "enum": ["safe-auto"],
-      "description": "Phase 1 只允许 safe-auto。company 侧有权重新分类"
+      "description": "默认只允许 safe-auto。执行侧有权重新分类"
     },
     "priority": {
       "type": "string",
@@ -52,7 +71,7 @@
         "obsidian-write",
         "state-sync"
       ],
-      "description": "Phase 1 允许的任务类型白名单"
+      "description": "允许的任务类型白名单"
     },
     "policy_version": {
       "type": "string",
@@ -62,7 +81,7 @@
       "type": "string",
       "enum": ["low"],
       "default": "low",
-      "description": "Phase 1 固定为 low"
+      "description": "默认敏感等级为 low"
     },
     "payload": {
       "type": "object",
@@ -125,7 +144,7 @@
     },
     "_claim": {
       "type": "object",
-      "description": "任务领取信息，由 company 侧填写",
+      "description": "任务领取信息，由执行侧填写",
       "properties": {
         "executor": { "type": "string" },
         "claimed_at": { "type": "string", "format": "date-time" },

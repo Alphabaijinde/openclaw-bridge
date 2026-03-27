@@ -17,12 +17,14 @@ source "${SCRIPT_DIR}/bridge-lib.sh"
 TITLE=""
 TASK_TYPE=""
 INSTRUCTION=""
-ALLOWED_ACTIONS="fetch_public,summarize"
+TARGET_SITE=""
+ALLOWED_ACTIONS="${ALLOWED_ACTIONS_DEFAULT:-read_status,summarize,write_obsidian,fetch_public}"
 MAX_OUTPUT_CHARS="2000"
 TIMEOUT_SECONDS="600"
 RETRY_BUDGET="2"
 PRIORITY="medium"
-REQUESTER="home-openclaw"
+REQUESTER="${OPENCLAW_SIDE:-$(bridge_role)}-openclaw"
+FLOW_VERSION="v2"
 
 # ---- 使用说明 ----
 usage() {
@@ -39,8 +41,10 @@ usage() {
   --instruction TEXT    任务指令（最多 1000 字符）
 
 可选参数:
+  --target SITE         任务目标侧: home | company
+                        默认: 当前侧的另一端
   --allowed-actions A   允许的动作，逗号分隔
-                        默认: fetch_public,summarize
+                        默认: read_status,summarize,write_obsidian,fetch_public
                         可选: read_status, summarize, write_obsidian, fetch_public
   --max-output N        最大输出字符数，默认 2000
   --timeout N           超时秒数，默认 600
@@ -69,6 +73,7 @@ while [[ $# -gt 0 ]]; do
         --title)          TITLE="$2";        shift 2 ;;
         --task-type)      TASK_TYPE="$2";    shift 2 ;;
         --instruction)    INSTRUCTION="$2"; shift 2 ;;
+        --target)         TARGET_SITE="$2";  shift 2 ;;
         --allowed-actions) ALLOWED_ACTIONS="$2"; shift 2 ;;
         --max-output)     MAX_OUTPUT_CHARS="$2"; shift 2 ;;
         --timeout)        TIMEOUT_SECONDS="$2"; shift 2 ;;
@@ -110,6 +115,21 @@ else
     TASK_ID=$(generate_task_id)
     IDEMPOTENCY_KEY="${TASK_ID}-v1"
     CREATED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+    SOURCE_SITE="$(bridge_role)"
+
+    if [[ -z "$TARGET_SITE" ]]; then
+        TARGET_SITE="$(bridge_default_target_site)"
+    fi
+
+    if [[ "$TARGET_SITE" != "home" && "$TARGET_SITE" != "company" ]]; then
+        err "无效的 --target: $TARGET_SITE"
+        exit 1
+    fi
+
+    if [[ "$TARGET_SITE" == "$SOURCE_SITE" ]]; then
+        err "source 和 target 不能相同: $SOURCE_SITE"
+        exit 1
+    fi
     
     # 分割 allowed_actions
     IFS=',' read -ra ACTIONS_ARRAY <<< "$ALLOWED_ACTIONS"
@@ -123,8 +143,9 @@ else
     TASK_JSON=$(jq -n \
         --arg task_id "$TASK_ID" \
         --arg idempotency_key "$IDEMPOTENCY_KEY" \
-        --arg source "home" \
-        --arg target "company" \
+        --arg flow_version "$FLOW_VERSION" \
+        --arg source "$SOURCE_SITE" \
+        --arg target "$TARGET_SITE" \
         --arg requester "$REQUESTER" \
         --arg title "$TITLE" \
         --arg lane "safe-auto" \
@@ -142,6 +163,7 @@ else
         '{
             task_id: $task_id,
             idempotency_key: $idempotency_key,
+            flow_version: $flow_version,
             source: $source,
             target: $target,
             requester: $requester,
@@ -167,15 +189,15 @@ else
     DEST="${BRIDGE_TASKS_DIR}/inbox/${TASK_ID}.json"
     mkdir -p "$(dirname "$DEST")"
     echo "$TASK_JSON" | jq '.' > "$DEST"
-    
+
     info "任务已创建: $TASK_ID"
     info "保存位置: $DEST"
-    log_info "Task created: $TASK_ID task_type=$TASK_TYPE lane=safe-auto"
+    log_info "Task created: $TASK_ID task_type=$TASK_TYPE lane=safe-auto direction=${SOURCE_SITE}->${TARGET_SITE}"
     
     # 敏感信息扫描
     if ! scan_sensitive "$INSTRUCTION"; then
         warn "指令可能包含敏感信息，请检查任务单"
-        feishu_notify "warn" "任务含敏感词 [$OPENCLAW_SIDE]" "任务 $TASK_ID 包含敏感词：$TITLE"
+        feishu_notify "warn" "任务含敏感词 [$(bridge_role_label "$SOURCE_SITE")]" "任务 $TASK_ID（${SOURCE_SITE}→${TARGET_SITE}）包含敏感词：$TITLE"
     fi
 fi
 
@@ -194,6 +216,8 @@ if [[ "$PUSH_NOW" == "true" ]]; then
     if [[ ! -d "${BRIDGE_ROOT}/.git" ]]; then
         git -C "$BRIDGE_ROOT" init
         git_setup "$BRIDGE_ROOT" "$BRIDGE_GIT_REMOTE" "$BRIDGE_GIT_BRANCH"
+    elif [[ -n "$BRIDGE_GIT_REMOTE" ]]; then
+        git_pull_rebase "$BRIDGE_ROOT" "$BRIDGE_GIT_BRANCH" 2>/dev/null || true
     fi
     
     COMMIT_MSG="feat(bridge): push task ${TASK_ID:-$(
@@ -203,7 +227,7 @@ if [[ "$PUSH_NOW" == "true" ]]; then
     TASK_DISPLAY="${TASK_ID:-$(basename "$TASK_FILE" .json)}"
     if git_push "$BRIDGE_ROOT" "$BRIDGE_GIT_BRANCH" "$COMMIT_MSG"; then
         ok "已推送: $COMMIT_MSG"
-        feishu_notify "info" "任务已推送" "任务 ${TASK_DISPLAY} 已成功从 ${OPENCLAW_SIDE} 侧推送到桥接仓库"
+        feishu_notify "info" "任务已推送" "任务 ${TASK_DISPLAY} 已成功从 $(bridge_role_label "$SOURCE_SITE") 推送到 ${TARGET_SITE} 侧"
     else
         err "推送失败"
         exit 1

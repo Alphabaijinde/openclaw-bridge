@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# bridge-execute.sh - 执行任务（公司侧）
+# bridge-execute.sh - 执行任务（双向）
 # 
 # 用法:
 #   bridge-execute.sh <task-file.json>
@@ -19,7 +19,7 @@ if [[ $# -lt 1 ]]; then
 fi
 
 TASK_FILE="$1"
-EXECUTOR="${COMPANY_EXECUTOR:-company-openclaw}"
+EXECUTOR="${BRIDGE_EXECUTOR:-${COMPANY_EXECUTOR:-$(bridge_role)-openclaw}}"
 
 if [[ ! -f "$TASK_FILE" ]]; then
     err "任务文件不存在: $TASK_FILE"
@@ -32,8 +32,16 @@ INSTRUCTION=$(jq -r '.payload.instruction' "$TASK_FILE")
 ALLOWED_ACTIONS=$(jq -r '.payload.allowed_actions | join(",")' "$TASK_FILE")
 MAX_OUTPUT_CHARS=$(jq -r '.payload.max_output_chars // 2000' "$TASK_FILE")
 TIMEOUT=$(jq -r '.timeout_seconds // 600' "$TASK_FILE")
+SOURCE_SITE=$(jq -r '.source // "unknown"' "$TASK_FILE")
+TARGET_SITE=$(jq -r '.target // "unknown"' "$TASK_FILE")
+
+if [[ "$TARGET_SITE" != "$(bridge_role)" ]]; then
+    err "任务目标侧与当前侧不匹配: ${SOURCE_SITE} -> ${TARGET_SITE}, local=$(bridge_role)"
+    exit 1
+fi
 
 info "====== 执行任务: $TASK_ID ======"
+info "Role: $(bridge_role_label) ($(bridge_role))"
 info "Type: $TASK_TYPE"
 info "Actions: $ALLOWED_ACTIONS"
 info "Timeout: ${TIMEOUT}s"
@@ -94,8 +102,7 @@ execute_task() {
     echo "$summary" >> "$summary_file"
     
     log_info "Artifact saved: $summary_file"
-    
-    local reclassified="false"
+
     # 写结果回任务单
     write_result "$status" "$summary" "$word_count" "$artifact_id" "$STARTED_AT"
     
@@ -105,13 +112,13 @@ execute_task() {
         mv "$running_file" "${BRIDGE_TASKS_DIR}/done/${TASK_ID}.json"
     fi
     
-    feishu_notify "success" "任务执行完成 [$OPENCLAW_SIDE]" "任务 $TASK_ID 已由 $OPENCLAW_SIDE 执行完成，结果见：$summary_file 及 tasks/done/${TASK_ID}.json"
+    feishu_notify "success" "任务执行完成 [$(bridge_role_label)]" "任务 $TASK_ID 已由 $(bridge_role_label) 执行完成（${SOURCE_SITE}→${TARGET_SITE}），结果见：$summary_file 及 tasks/done/${TASK_ID}.json"
 }
 
 # ---- 各类型任务执行器 ----
 
 execute_status_summary() {
-    # 读取公司侧任务状态
+    # 读取本机任务状态
     local today_tasks
     today_tasks=$(find "${BRIDGE_TASKS_DIR}/done" -name "bridge-$(date '+%Y-%m-%d')-*.json" 2>/dev/null | wc -l)
     local running_tasks
@@ -185,8 +192,9 @@ EOF
 }
 
 execute_obsidian_write() {
-    # 向公司 Obsidian 写入低敏内容
-    local obsidian_dir="${COMPANY_OBSIDIAN_DIR:-${HOME_OBSIDIAN_DIR}}"
+    # 向本机 Obsidian 写入低敏内容
+    local obsidian_dir
+    obsidian_dir="$(bridge_local_obsidian_dir)"
     
     if [[ ! -d "$obsidian_dir" ]]; then
         err "Obsidian 目录不存在: $obsidian_dir"
@@ -202,7 +210,7 @@ execute_obsidian_write() {
     cat > "$note_file" <<EOF
 ---
 date: ${date_str}
-tags: [bridge, company]
+tags: [bridge, $(bridge_role)]
 source: bridge-task
 task_id: ${TASK_ID}
 ---
@@ -255,6 +263,8 @@ write_result() {
     
     local now
     now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+    local executor_site
+    executor_site="$(bridge_role)"
     
     local result_file="${BRIDGE_TASKS_DIR}/running/${TASK_ID}.json"
     
@@ -267,8 +277,9 @@ write_result() {
         --arg started_at "$started_at" \
         --arg completed_at "$now" \
         --arg executor "$EXECUTOR" \
-        --arg company_lane "safe-auto" \
-        --arg company_reclassified "false" \
+        --arg executor_site "$executor_site" \
+        --arg executor_lane "safe-auto" \
+        --arg executor_reclassified "false" \
         '{
             status: $status,
             result: {
@@ -281,8 +292,10 @@ write_result() {
                 sensitivity: "internal-summary",
                 accessible: false
             }],
-            company_lane_assigned: $company_lane,
-            company_reclassified: ($reclassified == "true"),
+            executor_site_assigned: $executor_site,
+            company_lane_assigned: $executor_lane,
+            executor_reclassified: ($executor_reclassified == "true"),
+            company_reclassified: ($executor_reclassified == "true"),
             executor: $executor,
             started_at: $started_at,
             completed_at: $completed_at,

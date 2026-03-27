@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Bridge Result",
-  "description": "公司与个人 OpenClaw 桥接任务结果回传格式 (Phase 1)",
+  "description": "公司与个人 OpenClaw 双向桥接任务结果回传格式",
   "type": "object",
   "required": ["task_id", "status", "completed_at"],
   "additionalProperties": false,
@@ -12,6 +12,18 @@
     },
     "idempotency_key": {
       "type": "string"
+    },
+    "source": {
+      "type": "string",
+      "enum": ["home", "company"]
+    },
+    "target": {
+      "type": "string",
+      "enum": ["home", "company"]
+    },
+    "flow_version": {
+      "type": "string",
+      "enum": ["v1", "v2"]
     },
     "status": {
       "type": "string",
@@ -24,9 +36,17 @@
         "cancelled"
       ]
     },
+    "executor_site_assigned": {
+      "type": "string",
+      "enum": ["home", "company"]
+    },
     "company_lane_assigned": {
       "type": "string",
-      "enum": ["safe-auto", "sandbox-auto", "human-review"]
+      "enum": ["safe-auto", "sandbox-auto", "human-review", "unknown"]
+    },
+    "executor_reclassified": {
+      "type": "boolean",
+      "description": "执行侧是否重新分类了 lane"
     },
     "company_reclassified": {
       "type": "boolean",
@@ -42,7 +62,7 @@
         "summary": {
           "type": "string",
           "maxLength": 2000,
-          "description": "脱敏摘要，Phase 1 上限 2000 字符"
+      "description": "脱敏摘要，默认上限 2000 字符"
         },
         "word_count": {
           "type": "integer"
@@ -71,7 +91,7 @@
           "accessible": {
             "type": "boolean",
             "const": false,
-            "description": "Phase 1 固定为 false，不返回可访问 URL"
+      "description": "固定为 false，不返回可访问 URL"
           }
         }
       }
@@ -108,7 +128,7 @@
     },
     "executor": {
       "type": "string",
-      "description": "执行者标识，例如 company-openclaw"
+      "description": "执行者标识，例如 home-openclaw 或 company-openclaw"
     },
     "tool_trace_ref": {
       "type": "string",

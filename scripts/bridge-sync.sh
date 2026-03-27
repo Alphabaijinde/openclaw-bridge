@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# bridge-sync.sh - 同步结果回家里（家里侧）
+# bridge-sync.sh - 同步结果（双向）
 # 
 # 用法:
 #   bridge-sync.sh              # 拉取所有已完成任务
@@ -28,12 +28,13 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-OBSIDIAN_DIR="${HOME_OBSIDIAN_DIR:-${BRIDGE_ROOT}/../Obsidian}"
+OBSIDIAN_DIR="$(bridge_local_obsidian_dir)"
 BRIDGE_NOTES_DIR="${OBSIDIAN_DIR}/AI趋势/Bridge任务"
 
 # ---- 主流程 ----
 main() {
     info "====== OpenClaw Bridge Sync ======"
+    info "Role: $(bridge_role_label) ($(bridge_role))"
     
     # 1. 从远程拉取
     if [[ "$PULL_REMOTE" == "true" && -d "${BRIDGE_ROOT}/.git" ]]; then
@@ -51,14 +52,16 @@ main() {
         for result_file in "${BRIDGE_TASKS_DIR}/done/${TASK_ID}.json" \
                            "${BRIDGE_TASKS_DIR}/failed/${TASK_ID}.json"; do
             [[ -f "$result_file" ]] || continue
+            task_matches_local_source "$result_file" || continue
             sync_task_result "$result_file"
             ((synced++)) || true
         done
     else
         # 所有已完成任务
         for result_file in "${BRIDGE_TASKS_DIR}/done"/bridge-*.json \
-                          "${BRIDGE_TASKS_DIR}/failed"/bridge-*.json; do
+                           "${BRIDGE_TASKS_DIR}/failed"/bridge-*.json; do
             [[ -f "$result_file" ]] || continue
+            task_matches_local_source "$result_file" || continue
             sync_task_result "$result_file"
             ((synced++)) || true
         done
@@ -85,9 +88,13 @@ sync_task_result() {
     word_count=$(jq -r '.result.word_count // 0' "$result_file")
     completed_at=$(jq -r '.completed_at // ""' "$result_file")
     executor=$(jq -r '.executor // "unknown"' "$result_file")
+    local source_site target_site flow_version
+    source_site=$(jq -r '.source // "unknown"' "$result_file")
+    target_site=$(jq -r '.target // "unknown"' "$result_file")
+    flow_version=$(jq -r '.flow_version // "v1"' "$result_file")
     
-    info "同步任务: $tid (status=$status, executor=$executor)"
-    log_info "Syncing task $tid: status=$status"
+    info "同步任务: $tid (status=$status, direction=${source_site}->${target_site}, flow=${flow_version}, executor=$executor)"
+    log_info "Syncing task $tid: status=$status direction=${source_site}->${target_site}"
     
     # 打印摘要
     if [[ -n "$summary" ]]; then
@@ -98,7 +105,7 @@ sync_task_result() {
         echo ""
     fi
     
-    # 写入 Obsidian
+    # 写入本机 Obsidian
     if [[ "$TO_OBSIDIAN" == "true" ]]; then
         write_to_obsidian "$result_file"
     fi
@@ -117,8 +124,12 @@ write_to_obsidian() {
     title=$(jq -r '.title // ""' "$result_file")
     completed_at=$(jq -r '.completed_at // ""' "$result_file")
     executor=$(jq -r '.executor // "unknown"' "$result_file")
-    company_lane=$(jq -r '.company_lane_assigned // "unknown"' "$result_file")
-    reclassified=$(jq -r '.company_reclassified // false' "$result_file")
+    local source_site target_site executor_lane reclassified flow_version
+    source_site=$(jq -r '.source // "unknown"' "$result_file")
+    target_site=$(jq -r '.target // "unknown"' "$result_file")
+    flow_version=$(jq -r '.flow_version // "v1"' "$result_file")
+    executor_lane=$(jq -r '.executor_site_assigned // .company_lane_assigned // "unknown"' "$result_file")
+    reclassified=$(jq -r '.executor_reclassified // .company_reclassified // false' "$result_file")
     
     mkdir -p "$BRIDGE_NOTES_DIR"
     
@@ -140,7 +151,9 @@ completed_at: ${completed_at}
 ## 任务信息
 - **标题**: ${title}
 - **类型**: ${task_type}
-- **Lane**: ${company_lane}
+- **方向**: ${source_site} → ${target_site}
+- **Flow**: ${flow_version}
+- **Lane**: ${executor_lane}
 - **重新分类**: ${reclassified}
 
 ## 执行结果
@@ -157,9 +170,11 @@ ${summary}
 
 | 字段 | 值 |
 |------|-----|
-| company_lane_assigned | ${company_lane} |
-| company_reclassified | ${reclassified} |
+| executor_site_assigned | ${executor_lane} |
+| executor_reclassified | ${reclassified} |
 | executor | ${executor} |
+| source | ${source_site} |
+| target | ${target_site} |
 
 ## 原始任务单
 

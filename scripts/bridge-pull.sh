@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# bridge-pull.sh - 拉取并领取任务（公司侧）
+# bridge-pull.sh - 拉取并领取任务（双向）
 # 
 # 用法:
 #   bridge-pull.sh              # 仅拉取最新任务
@@ -30,13 +30,14 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-EXECUTOR="${COMPANY_EXECUTOR:-company-openclaw}"
+EXECUTOR="${BRIDGE_EXECUTOR:-${COMPANY_EXECUTOR:-$(bridge_role)-openclaw}}"
 LEASE_TTL="${TASK_LEASE_TTL:-600}"
 
 # ---- 主流程 ----
 main() {
     info "====== OpenClaw Bridge Pull ======"
     info "Root: ${BRIDGE_ROOT}"
+    info "Role: $(bridge_role_label) ($(bridge_role))"
     info "Executor: ${EXECUTOR}"
     info "Mode: $([[ "$EXECUTE" == "true" ]] && echo "pull+execute" || echo "pull only")"
     
@@ -66,6 +67,7 @@ main() {
         local count=0
         for task_file in "${BRIDGE_TASKS_DIR}/inbox"/bridge-*.json; do
             [[ -f "$task_file" ]] || continue
+            task_matches_local_target "$task_file" || continue
             if claim_and_process "$task_file"; then
                 ((count++)) || true
             fi
@@ -83,6 +85,7 @@ recover_expired_tasks() {
     
     for task_file in "${BRIDGE_TASKS_DIR}/running"/bridge-*.json; do
         [[ -f "$task_file" ]] || continue
+        task_matches_local_target "$task_file" || continue
         
         if is_lease_expired "$task_file"; then
             TASK_ID=$(basename "$task_file" .json)
@@ -102,17 +105,18 @@ claim_and_process() {
     local task_file="$1"
     local task_id
     task_id=$(basename "$task_file" .json)
+
+    if ! task_matches_local_target "$task_file"; then
+        warn "跳过非本机目标任务: $task_id"
+        return 0
+    fi
     
     log_info "Processing task: $task_id"
     
-    # --- 公司侧风险重判（关键步骤）---
+    # --- 执行侧风险重判（关键步骤）---
     local check_result
-    check_result=$(company_risk_check "$task_file")
+    check_result=$(executor_risk_check "$task_file")
     local check_status=$?
-    
-    local company_lane="safe-auto"
-    local reclassified="false"
-    local reclass_reason=""
     
     if [[ $check_status -eq 1 ]]; then
         # 危险，拒绝执行
@@ -120,9 +124,10 @@ claim_and_process() {
         update_task_status "$task_file" "failed" \
             "unsafe_request" \
             "$check_result" \
-            "Task exceeds Phase 1 safety bounds"
+            "Task exceeds Phase 1 safety bounds" \
+            "failed"
         
-        feishu_notify "error" "任务被拒绝" "任务  不符合 Phase 1 安全要求："
+        feishu_notify "error" "任务被拒绝" "任务 $task_id 不符合安全要求：$check_result"
         return 1
         
     elif [[ $check_status -eq 2 ]]; then
@@ -131,9 +136,10 @@ claim_and_process() {
         update_task_status "$task_file" "needs_review" \
             "review_required" \
             "$check_result" \
-            "Human review required before execution"
+            "Human review required before execution" \
+            "failed"
         
-        feishu_notify "warn" "任务需人工审核" "任务  需要人工审核："
+        feishu_notify "warn" "任务需人工审核" "任务 $task_id 需要人工审核：$check_result"
         return 1
     fi
     
@@ -143,6 +149,7 @@ claim_and_process() {
     
     # 移入 running
     mv "$task_file" "${BRIDGE_TASKS_DIR}/running/"
+    local running_file="${BRIDGE_TASKS_DIR}/running/${task_id}.json"
     log_info "Task moved to running: $task_id"
     
     # --- 执行任务 ---
@@ -150,7 +157,7 @@ claim_and_process() {
         info "执行任务: $task_id"
         
         local result
-        result=$("${SCRIPT_DIR}/bridge-execute.sh" "$task_file")
+        result=$("${SCRIPT_DIR}/bridge-execute.sh" "$running_file")
         local exec_status=$?
         
         if [[ $exec_status -eq 0 ]]; then
@@ -169,18 +176,19 @@ claim_and_process() {
                 
                 # 写回 pending（减少 retry_budget）
                 jq '(.retry_budget -= 1) | .status = "pending" | del(._claim)' \
-                    "${BRIDGE_TASKS_DIR}/running/${task_id}.json" \
+                    "$running_file" \
                     > "${BRIDGE_TASKS_DIR}/inbox/${task_id}.json"
-                rm "${BRIDGE_TASKS_DIR}/running/${task_id}.json"
+                rm "$running_file"
             else
                 # 重试次数用尽，标记失败
                 err "重试次数耗尽: $task_id"
                 update_task_status \
-                    "${BRIDGE_TASKS_DIR}/running/${task_id}.json" \
+                    "$running_file" \
                     "failed" \
                     "quota_exceeded" \
                     "Retry budget exhausted" \
-                    "Manual intervention required"
+                    "Manual intervention required" \
+                    "failed"
             fi
         fi
     else
@@ -244,7 +252,7 @@ push_changes() {
         return 0
     fi
     
-    if ! git -C "$BRIDGE_ROOT" diff --cached --quiet 2>/dev/null && \
+    if git -C "$BRIDGE_ROOT" diff --cached --quiet 2>/dev/null && \
        git -C "$BRIDGE_ROOT" diff --quiet 2>/dev/null; then
         log_debug "No changes to push"
         return 0

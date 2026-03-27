@@ -46,6 +46,94 @@ BRIDGE_GIT_BRANCH="${BRIDGE_GIT_BRANCH:-main}"
 ALLOWED_TASK_TYPES="${ALLOWED_TASK_TYPES:-status-summary,public-research,daily-report,obsidian-write,state-sync}"
 ALLOWED_ACTIONS_DEFAULT="${ALLOWED_ACTIONS_DEFAULT:-read_status,summarize,write_obsidian,fetch_public}"
 
+BRIDGE_ROLE="${BRIDGE_ROLE:-home}"
+BRIDGE_ROLE="$(printf '%s' "$BRIDGE_ROLE" | tr '[:upper:]' '[:lower:]')"
+case "$BRIDGE_ROLE" in
+    home|company) BRIDGE_ROLE="$BRIDGE_ROLE" ;;
+    *) BRIDGE_ROLE="home" ;;
+esac
+
+OPENCLAW_SIDE="${OPENCLAW_SIDE:-$BRIDGE_ROLE}"
+
+mkdir -p \
+    "${BRIDGE_TASKS_DIR}/inbox" \
+    "${BRIDGE_TASKS_DIR}/running" \
+    "${BRIDGE_TASKS_DIR}/done" \
+    "${BRIDGE_TASKS_DIR}/failed" \
+    "${BRIDGE_ARTIFACTS_DIR}/summaries" \
+    "${BRIDGE_LOGS_DIR}"
+
+bridge_role() {
+    echo "${BRIDGE_ROLE:-home}"
+}
+
+bridge_peer_role() {
+    case "$(bridge_role)" in
+        home) echo "company" ;;
+        company) echo "home" ;;
+        *) echo "home" ;;
+    esac
+}
+
+bridge_role_label() {
+    case "${1:-$(bridge_role)}" in
+        home) echo "家里侧" ;;
+        company) echo "公司侧" ;;
+        *) echo "未知侧" ;;
+    esac
+}
+
+bridge_direction_label() {
+    local source_site="${1:-$(bridge_role)}"
+    local target_site="${2:-$(bridge_peer_role)}"
+    echo "$(bridge_role_label "$source_site") → $(bridge_role_label "$target_site")"
+}
+
+bridge_default_target_site() {
+    local configured_target="${BRIDGE_DEFAULT_TARGET:-}"
+    local local_role
+    local_role="$(bridge_role)"
+    local normalized_target
+    normalized_target="$(printf '%s' "$configured_target" | tr '[:upper:]' '[:lower:]')"
+
+    case "$normalized_target" in
+        home|company)
+            if [[ "$normalized_target" != "$local_role" ]]; then
+                echo "$normalized_target"
+                return 0
+            fi
+            ;;
+    esac
+
+    bridge_peer_role
+}
+
+bridge_local_obsidian_dir() {
+    case "$(bridge_role)" in
+        home)
+            echo "${HOME_OBSIDIAN_DIR:-${BRIDGE_ROOT}/../Obsidian}"
+            ;;
+        company)
+            echo "${COMPANY_OBSIDIAN_DIR:-${HOME_OBSIDIAN_DIR:-${BRIDGE_ROOT}/../Obsidian}}"
+            ;;
+        *)
+            echo "${HOME_OBSIDIAN_DIR:-${BRIDGE_ROOT}/../Obsidian}"
+            ;;
+    esac
+}
+
+task_matches_local_target() {
+    local task_file="$1"
+    local local_role="${2:-$(bridge_role)}"
+    [[ "$(jq -r '.target // ""' "$task_file")" == "$local_role" ]]
+}
+
+task_matches_local_source() {
+    local task_file="$1"
+    local local_role="${2:-$(bridge_role)}"
+    [[ "$(jq -r '.source // ""' "$task_file")" == "$local_role" ]]
+}
+
 # ---- 日志函数 ----
 log() {
     local level="${1:-INFO}"
@@ -141,32 +229,56 @@ validate_task_schema() {
         log_error "Task file not found: $task_file"
         return 1
     fi
-    
-    # 基本字段检查（jq 验证）
-    if ! jq -e '
-        .task_id |
-        startswith("bridge-") |
-        and(.task_id | test("^bridge-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3}$")) |
-        and(.payload.instruction | length <= 1000)
-    ' "$task_file" >/dev/null 2>&1; then
-        log_error "Schema validation failed: $task_file"
+    local task_id source target task_type lane instruction
+    task_id=$(jq -r '.task_id // ""' "$task_file")
+    source=$(jq -r '.source // ""' "$task_file")
+    target=$(jq -r '.target // ""' "$task_file")
+    task_type=$(jq -r '.task_type // ""' "$task_file")
+    lane=$(jq -r '.lane // ""' "$task_file")
+    instruction=$(jq -r '.payload.instruction // ""' "$task_file")
+
+    if ! [[ "$task_id" =~ ^bridge-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3}$ ]]; then
+        log_error "Invalid task_id: $task_id"
         return 1
     fi
-    
-    # task_type 白名单检查
-    local allowed_types="status-summary public-research daily-report obsidian-write state-sync"
-    local task_type
-    task_type=$(jq -r '.task_type // ""' "$task_file")
-    if [[ ! " $allowed_types " =~ " $task_type " ]]; then
+
+    if [[ "$source" != "home" && "$source" != "company" ]]; then
+        log_error "source '$source' is invalid"
+        return 1
+    fi
+
+    if [[ "$target" != "home" && "$target" != "company" ]]; then
+        log_error "target '$target' is invalid"
+        return 1
+    fi
+
+    if [[ "$source" == "$target" ]]; then
+        log_error "source and target must differ for bidirectional flow"
+        return 1
+    fi
+
+    local allowed_types="${ALLOWED_TASK_TYPES:-status-summary,public-research,daily-report,obsidian-write,state-sync}"
+    local allowed_type
+    local found_type="false"
+    IFS=',' read -ra allowed_types_array <<< "$allowed_types"
+    for allowed_type in "${allowed_types_array[@]}"; do
+        if [[ "$allowed_type" == "$task_type" ]]; then
+            found_type="true"
+            break
+        fi
+    done
+    if [[ "$found_type" != "true" ]]; then
         log_error "task_type '$task_type' not in whitelist"
         return 1
     fi
-    
-    # lane 检查（Phase 1 仅允许 safe-auto）
-    local lane
-    lane=$(jq -r '.lane // ""' "$task_file")
+
     if [[ "$lane" != "safe-auto" ]]; then
-        log_error "lane '$lane' not allowed in Phase 1 (must be safe-auto)"
+        log_error "lane '$lane' not allowed (must be safe-auto)"
+        return 1
+    fi
+
+    if [[ ${#instruction} -gt 1000 ]]; then
+        log_error "instruction exceeds 1000 characters"
         return 1
     fi
     
@@ -306,8 +418,8 @@ scan_sensitive() {
     return 0
 }
 
-# ---- 公司侧风险重判 ----
-company_risk_check() {
+# ---- 执行侧风险重判 ----
+executor_risk_check() {
     local task_file="$1"
     
     local task_type instruction
@@ -360,4 +472,8 @@ company_risk_check() {
     # 全部通过
     echo "PASS: safe-auto"
     return 0
+}
+
+company_risk_check() {
+    executor_risk_check "$@"
 }
