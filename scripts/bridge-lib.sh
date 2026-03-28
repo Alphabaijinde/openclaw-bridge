@@ -12,6 +12,7 @@ BRIDGE_ROOT="$(dirname "$SCRIPT_DIR")"
 # ---- 加载环境配置（不影响 BRIDGE_ROOT） ----
 _load_env() {
     local env_file="$1"
+    local override="${2:-false}"
     [[ -f "$env_file" ]] || return 0
     while IFS='=' read -r key val; do
         [[ "$key" =~ ^# ]] && continue
@@ -29,13 +30,15 @@ _load_env() {
         fi
         
         if [[ -n "$key" ]]; then
-            export "$key"="$val"
+            if [[ "$override" == "true" || -z "${!key+x}" ]]; then
+                export "$key"="$val"
+            fi
         fi
     done < "$env_file"
 }
 
-_load_env "${BRIDGE_ROOT}/bridge.env.example"
-_load_env "${BRIDGE_ROOT}/bridge.env"
+_load_env "${BRIDGE_ROOT}/bridge.env.example" "false"
+_load_env "${BRIDGE_ROOT}/bridge.env" "true"
 
 SCHEMAS_DIR="${BRIDGE_ROOT}/schemas"
 BRIDGE_TASKS_DIR="${BRIDGE_TASKS_DIR:-${BRIDGE_ROOT}/tasks}"
@@ -120,6 +123,37 @@ bridge_local_obsidian_dir() {
             echo "${HOME_OBSIDIAN_DIR:-${BRIDGE_ROOT}/../Obsidian}"
             ;;
     esac
+}
+
+bridge_now_utc() {
+    date -u '+%Y-%m-%dT%H:%M:%SZ'
+}
+
+bridge_add_seconds_utc() {
+    local seconds="${1:-0}"
+    python3 - "$seconds" <<'PY'
+import sys
+from datetime import datetime, timedelta, timezone
+
+seconds = int(sys.argv[1])
+print((datetime.now(timezone.utc) + timedelta(seconds=seconds)).strftime('%Y-%m-%dT%H:%M:%SZ'))
+PY
+}
+
+bridge_iso_to_epoch() {
+    local iso="${1:-}"
+    python3 - "$iso" <<'PY'
+import sys
+from datetime import datetime, timezone
+
+iso = sys.argv[1]
+if not iso:
+    print(0)
+    raise SystemExit(0)
+
+dt = datetime.strptime(iso, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)
+print(int(dt.timestamp()))
+PY
 }
 
 task_matches_local_target() {
@@ -292,9 +326,8 @@ claim_task() {
     local lease_ttl="${3:-600}"
     
     local now expiry
-    now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-    expiry=$(date -u -d "+${lease_ttl} seconds" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || \
-        date -u -v+${lease_ttl}s '+%Y-%m-%dT%H:%M:%SZ')
+    now="$(bridge_now_utc)"
+    expiry="$(bridge_add_seconds_utc "$lease_ttl")"
     
     jq --arg executor "$executor" \
        --arg now "$now" \
@@ -337,7 +370,7 @@ is_lease_expired() {
     
     local now_ts expiry_ts
     now_ts=$(date -u '+%s')
-    expiry_ts=$(date -u -d "$expiry" '+%s' 2>/dev/null || echo 0)
+    expiry_ts=$(bridge_iso_to_epoch "$expiry")
     
     [[ "$now_ts" -gt "$expiry_ts" ]]
 }

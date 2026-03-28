@@ -72,7 +72,7 @@ show_all_status() {
     echo ""
 
     for dir in inbox running done failed; do
-        echo "【$dir】"
+        echo "【${dir}】"
 
         local found=0
         for f in "${BRIDGE_TASKS_DIR}/${dir}"/bridge-*.json; do
