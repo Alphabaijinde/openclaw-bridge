@@ -19,7 +19,7 @@
     },
     "target": {
       "type": "string",
-      "enum": ["home", "company"]
+      "enum": ["any", "home", "company"]
     },
     "flow_version": {
       "type": "string",
