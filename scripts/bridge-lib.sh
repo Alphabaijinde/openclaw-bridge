@@ -108,7 +108,7 @@ bridge_default_target_site() {
             ;;
     esac
 
-    bridge_peer_role
+    echo "any"
 }
 
 bridge_local_obsidian_dir() {
