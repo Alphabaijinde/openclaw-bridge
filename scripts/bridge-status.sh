@@ -26,16 +26,33 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-count_direction_tasks() {
-    local source_site="$1"
-    local target_site="$2"
+count_target_tasks() {
+    local target_scope="$1"
     local total=0
     local dir f
 
     for dir in inbox running done failed; do
         for f in "${BRIDGE_TASKS_DIR}/${dir}"/bridge-*.json; do
             [[ -f "$f" ]] || continue
-            if [[ "$(jq -r '.source // ""' "$f")" == "$source_site" && "$(jq -r '.target // ""' "$f")" == "$target_site" ]]; then
+            if [[ "$(jq -r '.target // "any"' "$f")" == "$target_scope" ]]; then
+                ((total++)) || true
+            fi
+        done
+    done
+
+    echo "$total"
+}
+
+count_claimable_tasks() {
+    local local_role="$1"
+    local total=0
+    local dir f target
+
+    for dir in inbox running done failed; do
+        for f in "${BRIDGE_TASKS_DIR}/${dir}"/bridge-*.json; do
+            [[ -f "$f" ]] || continue
+            target=$(jq -r '.target // "any"' "$f")
+            if [[ "$target" == "any" || "$target" == "$local_role" ]]; then
                 ((total++)) || true
             fi
         done
@@ -66,9 +83,10 @@ show_all_status() {
     count_tasks
     echo ""
 
-    echo "方向总览："
-    echo "  家里侧 → 公司侧: $(count_direction_tasks home company)"
-    echo "  公司侧 → 家里侧: $(count_direction_tasks company home)"
+    echo "任务池概览："
+    echo "  家里侧可领取: $(count_claimable_tasks home)"
+    echo "  公司侧可领取: $(count_claimable_tasks company)"
+    echo "  任意侧任务: $(count_target_tasks any)"
     echo ""
 
     for dir in inbox running done failed; do

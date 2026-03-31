@@ -35,10 +35,10 @@
 
 ```
 发起方: BRIDGE_ROLE=home|company bridge-push.sh --push
-        → 创建任务 JSON → Git Push → 仓库
+        → 创建任务 JSON（默认 target=any）→ Git Push → 仓库
 
 执行方: BRIDGE_ROLE=home|company bridge-pull.sh --execute (cron 轮询)
-        → Git Pull → 领取目标为本机的任务 → 执行 → 写结果 → Git Push
+        → Git Pull → 领取 any 或本机限定任务 → 执行 → 写结果 → Git Push
 
 状态流转: inbox → running → done / failed
 ```
@@ -133,7 +133,7 @@ BRIDGE_ROLE=home ./scripts/bridge-sync.sh --to-obsidian
 
 ## 流转约束
 
-- 任务必须明确 `source` / `target`，且两侧不能相同
+- `target=any` 表示任意侧可领取；`home/company` 表示仅限定侧可领取
 - 默认 `lane` 仍为 `safe-auto`
 - 仅允许白名单内的 `task_type`
 - 最大摘要 2000 字符
