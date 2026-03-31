@@ -19,22 +19,82 @@ EXECUTE="false"
 RECOVER="false"
 TASK_ID=""
 DRY_RUN="false"
+HEALTH_CHECK="false"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --execute)  EXECUTE="true"; shift ;;
-        --recover)  RECOVER="true"; shift ;;
-        --task-id)  TASK_ID="$2"; shift 2 ;;
-        --dry-run)  DRY_RUN="true"; shift ;;
-        *)          err "未知参数: $1"; exit 1 ;;
+        --execute)     EXECUTE="true"; shift ;;
+        --recover)     RECOVER="true"; shift ;;
+        --task-id)     TASK_ID="$2"; shift 2 ;;
+        --dry-run)     DRY_RUN="true"; shift ;;
+        --health)      HEALTH_CHECK="true"; shift ;;
+        *)             err "未知参数: $1"; exit 1 ;;
     esac
 done
 
 EXECUTOR="${BRIDGE_EXECUTOR:-${COMPANY_EXECUTOR:-$(bridge_role)-openclaw}}"
 LEASE_TTL="${TASK_LEASE_TTL:-600}"
 
+# ---- 健康检查 ----
+run_health_check() {
+    info "====== 健康检查 ======"
+    local role
+    role="$(bridge_role)"
+    local now
+    now="$(date '+%Y-%m-%d %H:%M:%S')"
+    
+    local inbox_count running_count done_count failed_count
+    inbox_count=$(find "${BRIDGE_TASKS_DIR}/inbox" -name "bridge-*.json" 2>/dev/null | wc -l)
+    running_count=$(find "${BRIDGE_TASKS_DIR}/running" -name "bridge-*.json" 2>/dev/null | wc -l)
+    done_count=$(find "${BRIDGE_TASKS_DIR}/done" -name "bridge-*.json" 2>/dev/null | wc -l)
+    failed_count=$(find "${BRIDGE_TASKS_DIR}/failed" -name "bridge-*.json" 2>/dev/null | wc -l)
+    
+    local git_status="ok"
+    if [[ -d "${BRIDGE_ROOT}/.git" ]]; then
+        if ! git -C "$BRIDGE_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            git_status="broken"
+        fi
+    else
+        git_status="not-a-repo"
+    fi
+    
+    local health_report
+    health_report=$(jq -n \
+        --arg role "$role" \
+        --arg timestamp "$now" \
+        --arg git_status "$git_status" \
+        --argjson inbox "$inbox_count" \
+        --argjson running "$running_count" \
+        --argjson done "$done_count" \
+        --argjson failed "$failed_count" \
+        '{
+            health: "ok",
+            role: $role,
+            timestamp: $timestamp,
+            git: $git_status,
+            tasks: {
+                inbox: $inbox,
+                running: $running,
+                done: $done,
+                failed: $failed
+            }
+        }')
+    
+    echo "$health_report" | jq .
+    
+    local health_file="${BRIDGE_ROOT}/.health.json"
+    echo "$health_report" > "$health_file"
+    
+    info "健康检查完成"
+    exit 0
+}
+
 # ---- 主流程 ----
 main() {
+    if [[ "$HEALTH_CHECK" == "true" ]]; then
+        run_health_check
+    fi
+    
     info "====== OpenClaw Bridge Pull ======"
     info "Root: ${BRIDGE_ROOT}"
     info "Role: $(bridge_role_label) ($(bridge_role))"
@@ -54,8 +114,27 @@ main() {
         recover_expired_tasks
     fi
     
-    # 3. 查找可领取的任务
-    local task_file
+    # 3. 按优先级排序任务（priority: high > medium > low）
+    local task_files=()
+    for task_file in "${BRIDGE_TASKS_DIR}/inbox"/bridge-*.json; do
+        [[ -f "$task_file" ]] || continue
+        task_matches_local_target "$task_file" || continue
+        task_files+=("$task_file")
+    done
+    
+    # 按 priority 排序
+    local sorted_files=()
+    for priority in high medium low; do
+        for task_file in "${task_files[@]}"; do
+            local task_priority
+            task_priority=$(jq -r '.priority // "medium"' "$task_file")
+            if [[ "$task_priority" == "$priority" ]]; then
+                sorted_files+=("$task_file")
+            fi
+        done
+    done
+    
+    # 4. 领取并处理任务
     if [[ -n "$TASK_ID" ]]; then
         task_file="${BRIDGE_TASKS_DIR}/inbox/${TASK_ID}.json"
         if [[ ! -f "$task_file" ]]; then
@@ -65,9 +144,7 @@ main() {
         claim_and_process "$task_file"
     else
         local count=0
-        for task_file in "${BRIDGE_TASKS_DIR}/inbox"/bridge-*.json; do
-            [[ -f "$task_file" ]] || continue
-            task_matches_local_target "$task_file" || continue
+        for task_file in "${sorted_files[@]}"; do
             if claim_and_process "$task_file"; then
                 ((count++)) || true
             fi
@@ -75,7 +152,7 @@ main() {
         info "已领取 $count 个任务"
     fi
     
-    # 4. 推回远程（如果有变更）
+    # 5. 推回远程（如果有变更）
     push_changes "Tasks claimed/processed"
 }
 
