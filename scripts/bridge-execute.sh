@@ -35,8 +35,8 @@ TIMEOUT=$(jq -r '.timeout_seconds // 600' "$TASK_FILE")
 SOURCE_SITE=$(jq -r '.source // "unknown"' "$TASK_FILE")
 TARGET_SITE=$(jq -r '.target // "unknown"' "$TASK_FILE")
 
-if [[ "$TARGET_SITE" != "$(bridge_role)" ]]; then
-    err "任务目标侧与当前侧不匹配: ${SOURCE_SITE} -> ${TARGET_SITE}, local=$(bridge_role)"
+if [[ "$TARGET_SITE" != "any" && "$TARGET_SITE" != "$(bridge_role)" ]]; then
+    err "任务领取范围与当前侧不匹配: ${SOURCE_SITE} -> ${TARGET_SITE}, local=$(bridge_role)"
     exit 1
 fi
 

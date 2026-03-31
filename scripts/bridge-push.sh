@@ -41,8 +41,8 @@ usage() {
   --instruction TEXT    任务指令（最多 1000 字符）
 
 可选参数:
-  --target SITE         任务目标侧: home | company
-                        默认: 当前侧的另一端
+  --target SITE         任务领取范围: any | home | company
+                        默认: any（任意侧可领取）
   --allowed-actions A   允许的动作，逗号分隔
                         默认: read_status,summarize,write_obsidian,fetch_public
                         可选: read_status, summarize, write_obsidian, fetch_public
@@ -123,11 +123,6 @@ else
 
     if [[ "$TARGET_SITE" != "home" && "$TARGET_SITE" != "company" && "$TARGET_SITE" != "any" ]]; then
         err "无效的 --target: $TARGET_SITE（必须是 home、company 或 any）"
-        exit 1
-    fi
-
-    if [[ "$TARGET_SITE" != "any" && "$TARGET_SITE" == "$SOURCE_SITE" ]]; then
-        err "source 和 target 不能相同: $SOURCE_SITE"
         exit 1
     fi
     

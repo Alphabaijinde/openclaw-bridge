@@ -82,6 +82,7 @@ bridge_role_label() {
     case "${1:-$(bridge_role)}" in
         home) echo "家里侧" ;;
         company) echo "公司侧" ;;
+        any) echo "任意侧" ;;
         *) echo "未知侧" ;;
     esac
 }
@@ -94,17 +95,17 @@ bridge_direction_label() {
 
 bridge_default_target_site() {
     local configured_target="${BRIDGE_DEFAULT_TARGET:-}"
-    local local_role
-    local_role="$(bridge_role)"
     local normalized_target
     normalized_target="$(printf '%s' "$configured_target" | tr '[:upper:]' '[:lower:]')"
 
     case "$normalized_target" in
+        any)
+            echo "any"
+            return 0
+            ;;
         home|company)
-            if [[ "$normalized_target" != "$local_role" ]]; then
-                echo "$normalized_target"
-                return 0
-            fi
+            echo "$normalized_target"
+            return 0
             ;;
     esac
 
@@ -160,8 +161,8 @@ task_matches_local_target() {
     local task_file="$1"
     local local_role="${2:-$(bridge_role)}"
     local target
-    target="$(jq -r '.target // ""' "$task_file")"
-    [[ "$target" == "$local_role" || "$target" == "any" ]]
+    target=$(jq -r '.target // "any"' "$task_file")
+    [[ "$target" == "any" || "$target" == "$local_role" ]]
 }
 
 task_matches_local_source() {
@@ -285,11 +286,6 @@ validate_task_schema() {
 
     if [[ "$target" != "home" && "$target" != "company" && "$target" != "any" ]]; then
         log_error "target '$target' is invalid"
-        return 1
-    fi
-
-    if [[ "$target" != "any" && "$source" == "$target" ]]; then
-        log_error "source and target must differ for bidirectional flow"
         return 1
     fi
 
