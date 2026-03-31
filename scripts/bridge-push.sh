@@ -227,7 +227,7 @@ if [[ "$PUSH_NOW" == "true" ]]; then
     TASK_DISPLAY="${TASK_ID:-$(basename "$TASK_FILE" .json)}"
     if git_push "$BRIDGE_ROOT" "$BRIDGE_GIT_BRANCH" "$COMMIT_MSG"; then
         ok "已推送: $COMMIT_MSG"
-        feishu_notify "info" "任务已推送" "任务 ${TASK_DISPLAY} 已成功从 $(bridge_role_label "$SOURCE_SITE") 推送到 ${TARGET_SITE} 侧"
+        feishu_notify "info" "任务已推送" "任务 ${TASK_DISPLAY} 已推送到任务池，等待执行方拉取"
     else
         err "推送失败"
         exit 1
