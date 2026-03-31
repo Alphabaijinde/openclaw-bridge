@@ -159,7 +159,9 @@ PY
 task_matches_local_target() {
     local task_file="$1"
     local local_role="${2:-$(bridge_role)}"
-    [[ "$(jq -r '.target // ""' "$task_file")" == "$local_role" ]]
+    local target
+    target="$(jq -r '.target // ""' "$task_file")"
+    [[ "$target" == "$local_role" || "$target" == "any" ]]
 }
 
 task_matches_local_source() {
@@ -281,12 +283,12 @@ validate_task_schema() {
         return 1
     fi
 
-    if [[ "$target" != "home" && "$target" != "company" ]]; then
+    if [[ "$target" != "home" && "$target" != "company" && "$target" != "any" ]]; then
         log_error "target '$target' is invalid"
         return 1
     fi
 
-    if [[ "$source" == "$target" ]]; then
+    if [[ "$target" != "any" && "$source" == "$target" ]]; then
         log_error "source and target must differ for bidirectional flow"
         return 1
     fi

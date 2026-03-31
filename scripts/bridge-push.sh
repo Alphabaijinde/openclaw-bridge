@@ -121,12 +121,12 @@ else
         TARGET_SITE="$(bridge_default_target_site)"
     fi
 
-    if [[ "$TARGET_SITE" != "home" && "$TARGET_SITE" != "company" ]]; then
-        err "无效的 --target: $TARGET_SITE"
+    if [[ "$TARGET_SITE" != "home" && "$TARGET_SITE" != "company" && "$TARGET_SITE" != "any" ]]; then
+        err "无效的 --target: $TARGET_SITE（必须是 home、company 或 any）"
         exit 1
     fi
 
-    if [[ "$TARGET_SITE" == "$SOURCE_SITE" ]]; then
+    if [[ "$TARGET_SITE" != "any" && "$TARGET_SITE" == "$SOURCE_SITE" ]]; then
         err "source 和 target 不能相同: $SOURCE_SITE"
         exit 1
     fi
