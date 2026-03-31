@@ -112,12 +112,10 @@ execute_task() {
         mv "$running_file" "${BRIDGE_TASKS_DIR}/done/${TASK_ID}.json"
     fi
     
-    feishu_notify "success" "任务执行完成 [$(bridge_role_label)]" "任务 $TASK_ID 已由 $(bridge_role_label) 执行完成（${SOURCE_SITE}→${TARGET_SITE}），结果见：$summary_file 及 tasks/done/${TASK_ID}.json"
+    local now_str
+    now_str="$(date '+%Y-%m-%d %H:%M:%S')"
     
-    # 通知发起方（如果 source != target）
-    if [[ "$SOURCE_SITE" != "$TARGET_SITE" ]]; then
-        feishu_notify "info" "任务结果回传 [$(bridge_role_label)]" "您的任务 $TASK_ID（${SOURCE_SITE}→${TARGET_SITE}）已由 $(bridge_role_label) 完成，结果摘要：${summary:0:200}"
-    fi
+    feishu_notify "success" "任务完成 [${now_str}]" "任务 $TASK_ID 已由 $(bridge_role_label) 完成（${SOURCE_SITE}→${TARGET_SITE}）\n摘要：${summary:0:300}"
 }
 
 # ---- 各类型任务执行器 ----

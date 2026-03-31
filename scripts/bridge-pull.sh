@@ -116,9 +116,31 @@ main() {
     
     # 3. 按优先级排序任务（priority: high > medium > low）
     local task_files=()
+    local now_epoch
+    now_epoch=$(date +%s)
+    local max_age_seconds="${TASK_MAX_AGE:-86400}"
+    
     for task_file in "${BRIDGE_TASKS_DIR}/inbox"/bridge-*.json; do
         [[ -f "$task_file" ]] || continue
         task_matches_local_target "$task_file" || continue
+        
+        # 检查任务是否过期（超过 max_age_seconds 的任务跳过）
+        local created_at task_age
+        created_at=$(jq -r '.created_at // ""' "$task_file")
+        if [[ -n "$created_at" && "$created_at" != "null" ]]; then
+            local created_epoch
+            created_epoch=$(date -d "$created_at" +%s 2>/dev/null || echo "0")
+            if [[ "$created_epoch" -gt 0 ]]; then
+                task_age=$((now_epoch - created_epoch))
+                if [[ "$task_age" -gt "$max_age_seconds" ]]; then
+                    local tid
+                    tid=$(basename "$task_file" .json)
+                    warn "任务 $tid 已过期 (${task_age}s > ${max_age_seconds}s)，跳过"
+                    continue
+                fi
+            fi
+        fi
+        
         task_files+=("$task_file")
     done
     
