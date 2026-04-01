@@ -23,3 +23,6 @@ fi
   ./scripts/bridge-pull.sh --execute --recover
   echo "=== $(date '+%Y-%m-%d %H:%M:%S') bridge-pull cron 结束 ==="
 } >>"${LOG_FILE}" 2>&1
+
+# Heartbeat: report this side is alive
+./scripts/bridge-heartbeat.sh >>"${LOG_FILE}" 2>&1 || true

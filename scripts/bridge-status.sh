@@ -89,6 +89,22 @@ show_all_status() {
     echo "  任意侧任务: $(count_target_tasks any)"
     echo ""
 
+    # Heartbeat status
+    echo "心跳状态："
+    local hb_dir="${BRIDGE_ROOT}/.heartbeat"
+    for side in home company; do
+        local hb_file="${hb_dir}/${side}.json"
+        if [[ -f "$hb_file" ]]; then
+            local hb_ts hb_host
+            hb_ts=$(jq -r '.last_heartbeat // "unknown"' "$hb_file")
+            hb_host=$(jq -r '.hostname // "unknown"' "$hb_file")
+            echo "  $(bridge_role_label "$side"): 最后心跳 $hb_ts (主机: $hb_host)"
+        else
+            echo "  $(bridge_role_label "$side"): 无心跳记录"
+        fi
+    done
+    echo ""
+
     for dir in inbox running done failed; do
         echo "【${dir}】"
 
