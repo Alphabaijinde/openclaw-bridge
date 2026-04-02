@@ -56,7 +56,8 @@
         "public-research",
         "daily-report",
         "obsidian-write",
-        "state-sync"
+        "state-sync",
+        "infra-setup"
       ],
       "description": "允许的任务类型白名单"
     },

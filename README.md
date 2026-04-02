@@ -108,16 +108,30 @@ BRIDGE_ROLE=company ./scripts/bridge-push.sh \
   --push
 ```
 
-### 4. 双向侧：拉取并执行
+### 4. 两侧自动拉取与心跳
 
 ```bash
-BRIDGE_ROLE=company ./scripts/bridge-pull.sh --execute
+# 一次性安装当前侧的自动循环
+BRIDGE_ROLE=home ./scripts/bridge-setup-cron.sh
+BRIDGE_ROLE=company ./scripts/bridge-setup-cron.sh
 
-# 定时轮询（建议每 5 分钟）
-*/5 * * * * BRIDGE_ROLE=company ~/ai-tasks/bridge/scripts/bridge-pull-cron.sh
+# 手动触发一次心跳
+BRIDGE_ROLE=home ./scripts/bridge-heartbeat.sh
+BRIDGE_ROLE=company ./scripts/bridge-heartbeat.sh
 ```
 
-### 5. 同步结果
+### 5. 公司侧首次部署任务
+
+```bash
+BRIDGE_ROLE=home ./scripts/bridge-push.sh \
+  --title "公司侧桥接自动部署" \
+  --task-type infra-setup \
+  --target company \
+  --instruction "在公司侧仓库执行 bridge-setup-cron.sh 和 bridge-heartbeat.sh，确认 crontab 中已存在 pull+heartbeat 任务，并刷新公司侧心跳。" \
+  --push
+```
+
+### 6. 同步结果
 
 ```bash
 BRIDGE_ROLE=home ./scripts/bridge-sync.sh --to-obsidian
@@ -136,6 +150,7 @@ BRIDGE_ROLE=home ./scripts/bridge-sync.sh --to-obsidian
 - `target=any` 表示任意侧可领取；`home/company` 表示仅限定侧可领取
 - 默认 `lane` 仍为 `safe-auto`
 - 仅允许白名单内的 `task_type`
+- `infra-setup` 任务会自动配置本侧 cron 并刷新心跳
 - 最大摘要 2000 字符
 - Artifact 使用 opaque ID，不返回 URL
 - 执行侧有权重新分类任务风险
