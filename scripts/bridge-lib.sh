@@ -46,7 +46,7 @@ BRIDGE_ARTIFACTS_DIR="${BRIDGE_ARTIFACTS_DIR:-${BRIDGE_ROOT}/artifacts}"
 BRIDGE_LOGS_DIR="${BRIDGE_LOGS_DIR:-${BRIDGE_ROOT}/logs}"
 BRIDGE_GIT_REMOTE="${BRIDGE_GIT_REMOTE:-}"
 BRIDGE_GIT_BRANCH="${BRIDGE_GIT_BRANCH:-main}"
-ALLOWED_TASK_TYPES="${ALLOWED_TASK_TYPES:-status-summary,public-research,daily-report,obsidian-write,state-sync}"
+ALLOWED_TASK_TYPES="${ALLOWED_TASK_TYPES:-status-summary,public-research,daily-report,obsidian-write,state-sync,infra-setup}"
 ALLOWED_ACTIONS_DEFAULT="${ALLOWED_ACTIONS_DEFAULT:-read_status,summarize,write_obsidian,fetch_public}"
 
 BRIDGE_ROLE="${BRIDGE_ROLE:-home}"

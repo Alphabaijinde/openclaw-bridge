@@ -70,6 +70,9 @@ execute_task() {
             ;;
         state-sync)
             summary=$(execute_state_sync)
+            ;; 
+        infra-setup)
+            summary=$(execute_infra_setup)
             ;;
         *)
             status="failed"
@@ -253,6 +256,24 @@ execute_state_sync() {
     "failed": ${failed_count}
   }
 }
+EOF
+}
+
+execute_infra_setup() {
+    local role
+    role="$(bridge_role)"
+
+    bash "${SCRIPT_DIR}/bridge-setup-cron.sh"
+    bash "${SCRIPT_DIR}/bridge-heartbeat.sh"
+
+    cat <<EOF
+${role} 侧部署完成：
+
+- 已安装 bridge-pull-cron.sh（每 5 分钟）
+- 已安装 bridge-heartbeat.sh（每 10 分钟）
+- 已刷新本侧心跳
+
+请在另一侧重复同样的部署命令，以形成双边联动。
 EOF
 }
 
