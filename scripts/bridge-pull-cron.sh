@@ -20,9 +20,9 @@ fi
 
 {
   echo "=== $(date '+%Y-%m-%d %H:%M:%S') bridge-pull cron 开始 ==="
-  ./scripts/bridge-pull.sh --execute --recover
+  ./scripts/bridge-pull.sh --execute --recover || true
   echo "=== $(date '+%Y-%m-%d %H:%M:%S') bridge-pull cron 结束 ==="
+  echo "--- heartbeat ---"
+  ./scripts/bridge-heartbeat.sh 2>&1 || true
+  echo "=== heartbeat done ==="
 } >>"${LOG_FILE}" 2>&1
-
-# Heartbeat: report this side is alive
-./scripts/bridge-heartbeat.sh >>"${LOG_FILE}" 2>&1 || true
