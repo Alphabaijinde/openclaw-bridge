@@ -29,16 +29,13 @@ setup_cron() {
     local current_cron
     current_cron=$(crontab -l 2>/dev/null || echo "")
     
-    # 移除旧的 bridge cron（如果有）
     local cleaned_cron
     cleaned_cron=$(CURRENT_CRON="$current_cron" python3 - <<'PY'
 import os
 
 blocked = (
-    'OpenClaw Bridge',
-    'bridge-pull-cron.sh',
-    'bridge-pull.sh',
-    'bridge-heartbeat.sh',
+    f'BRIDGE_DIR={os.environ.get("BRIDGE_ROOT", "")}',
+    f'OpenClaw Bridge - {os.environ.get("ROLE", "") } side',
 )
 
 for line in os.environ.get('CURRENT_CRON', '').splitlines():
@@ -80,10 +77,8 @@ remove_cron() {
 import os
 
 blocked = (
-    'OpenClaw Bridge',
-    'bridge-pull-cron.sh',
-    'bridge-pull.sh',
-    'bridge-heartbeat.sh',
+    f'BRIDGE_DIR={os.environ.get("BRIDGE_ROOT", "")}',
+    f'OpenClaw Bridge - {os.environ.get("ROLE", "") } side',
 )
 
 for line in os.environ.get('CURRENT_CRON', '').splitlines():
