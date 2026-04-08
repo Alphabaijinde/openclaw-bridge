@@ -12,6 +12,10 @@ ROLE="$(bridge_role)"
 HEARTBEAT_DIR="${BRIDGE_ROOT}/.heartbeat"
 mkdir -p "$HEARTBEAT_DIR"
 
+if [[ -d "${BRIDGE_ROOT}/.git" ]]; then
+    git -C "$BRIDGE_ROOT" pull --rebase origin "$BRIDGE_GIT_BRANCH" >/dev/null 2>&1 || true
+fi
+
 TIMESTAMP="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 HEARTBEAT_FILE="${HEARTBEAT_DIR}/${ROLE}.json"
 
