@@ -1,28 +1,36 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ---------- 配置 ----------
-BRIDGE_DIR="${BRIDGE_DIR:-${HOME}/ai-tasks/bridge}"
-LOG_FILE="${BRIDGE_DIR}/logs/bridge-pull-$(date +%Y%m%d).log"
-LOCK_FILE="${BRIDGE_DIR}/.bridge-pull.lock"
-# -------------------------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bridge-lib.sh
+source "${SCRIPT_DIR}/bridge-lib.sh"
 
-cd "${BRIDGE_DIR}"
-# 确保日志目录存在
+BRIDGE_DIR="${BRIDGE_DIR:-${BRIDGE_ROOT}}"
+LOG_FILE="${BRIDGE_DIR}/logs/bridge-pull-$(date +%Y%m%d).log"
+LOCK_DIR="${BRIDGE_DIR}/.bridge-pull.lock"
+
 mkdir -p "$(dirname "${LOG_FILE}")"
 
-# 并发控制：使用 flock 防止多个实例同时运行
-exec 200>"$LOCK_FILE"
-if ! flock -n 200; then
+acquire_lock() {
+    if mkdir "${LOCK_DIR}" 2>/dev/null; then
+        printf '%s\n' "$$" > "${LOCK_DIR}/pid"
+        trap 'rm -rf "${LOCK_DIR}"' EXIT
+        return 0
+    fi
+
     echo "$(date '+%Y-%m-%d %H:%M:%S') [WARN] 另一个 bridge-pull 实例正在运行，跳过本次" >> "$LOG_FILE"
+    return 1
+}
+
+if ! acquire_lock; then
     exit 0
 fi
 
 {
   echo "=== $(date '+%Y-%m-%d %H:%M:%S') bridge-pull cron 开始 ==="
-  ./scripts/bridge-pull.sh --execute --recover || true
+  "${SCRIPT_DIR}/bridge-pull.sh" --execute --recover || true
   echo "=== $(date '+%Y-%m-%d %H:%M:%S') bridge-pull cron 结束 ==="
   echo "--- heartbeat ---"
-  ./scripts/bridge-heartbeat.sh 2>&1 || true
+  BRIDGE_DIR="${BRIDGE_DIR}" BRIDGE_ROLE="$(bridge_role)" bash "${SCRIPT_DIR}/bridge-heartbeat.sh" 2>&1 || true
   echo "=== heartbeat done ==="
 } >>"${LOG_FILE}" 2>&1

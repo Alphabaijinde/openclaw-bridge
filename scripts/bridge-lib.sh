@@ -242,9 +242,9 @@ git_pull_rebase() {
     local branch="${2:-main}"
     
     if [[ -n "${BRIDGE_SSH_KEY:-}" ]]; then
-        GIT_SSH_COMMAND="ssh -i '${BRIDGE_SSH_KEY}'" git -C "$dir" pull --rebase origin "$branch"
+        GIT_SSH_COMMAND="ssh -i '${BRIDGE_SSH_KEY}'" git -C "$dir" pull --rebase --autostash origin "$branch"
     else
-        git -C "$dir" pull --rebase origin "$branch"
+        git -C "$dir" pull --rebase --autostash origin "$branch"
     fi
 }
 
