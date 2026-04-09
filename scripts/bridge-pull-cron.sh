@@ -7,7 +7,7 @@ source "${SCRIPT_DIR}/bridge-lib.sh"
 
 BRIDGE_DIR="${BRIDGE_DIR:-${BRIDGE_ROOT}}"
 LOG_FILE="${BRIDGE_DIR}/logs/bridge-pull-$(date +%Y%m%d).log"
-LOCK_DIR="${BRIDGE_DIR}/.bridge-pull.lock"
+LOCK_DIR="${BRIDGE_DIR}/.bridge-pull.lockdir"
 
 mkdir -p "$(dirname "${LOG_FILE}")"
 
