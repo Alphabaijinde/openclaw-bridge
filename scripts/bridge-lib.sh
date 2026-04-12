@@ -217,10 +217,32 @@ git_setup() {
     fi
 }
 
+bridge_git_remote() {
+    local dir="${1:-.}"
+    if [[ -n "${BRIDGE_GIT_REMOTE:-}" ]]; then
+        echo "${BRIDGE_GIT_REMOTE}"
+        return 0
+    fi
+
+    if git -C "$dir" remote get-url origin >/dev/null 2>&1; then
+        echo "origin"
+        return 0
+    fi
+
+    echo ""
+}
+
 git_push() {
     local dir="${1:-.}"
     local branch="${2:-main}"
     local msg="${3:-auto commit}"
+    local remote
+    remote="$(bridge_git_remote "$dir")"
+
+    if [[ -z "$remote" ]]; then
+        log_error "No git remote configured for $dir"
+        return 1
+    fi
     
     git -C "$dir" add -A
     if git -C "$dir" diff --cached --quiet; then
@@ -231,20 +253,35 @@ git_push() {
     git -C "$dir" commit -m "$msg"
     
     if [[ -n "${BRIDGE_SSH_KEY:-}" ]]; then
-        GIT_SSH_COMMAND="ssh -i '${BRIDGE_SSH_KEY}'" git -C "$dir" push -u origin "$branch"
+        if [[ "$remote" == "origin" ]]; then
+            GIT_SSH_COMMAND="ssh -i '${BRIDGE_SSH_KEY}'" git -C "$dir" push -u origin "$branch"
+        else
+            GIT_SSH_COMMAND="ssh -i '${BRIDGE_SSH_KEY}'" git -C "$dir" push "$remote" "$branch"
+        fi
     else
-        git -C "$dir" push -u origin "$branch"
+        if [[ "$remote" == "origin" ]]; then
+            git -C "$dir" push -u origin "$branch"
+        else
+            git -C "$dir" push "$remote" "$branch"
+        fi
     fi
 }
 
 git_pull_rebase() {
     local dir="${1:-.}"
     local branch="${2:-main}"
+    local remote
+    remote="$(bridge_git_remote "$dir")"
+
+    if [[ -z "$remote" ]]; then
+        log_error "No git remote configured for $dir"
+        return 1
+    fi
     
     if [[ -n "${BRIDGE_SSH_KEY:-}" ]]; then
-        GIT_SSH_COMMAND="ssh -i '${BRIDGE_SSH_KEY}'" git -C "$dir" pull --rebase --autostash origin "$branch"
+        GIT_SSH_COMMAND="ssh -i '${BRIDGE_SSH_KEY}'" git -C "$dir" pull --rebase --autostash "$remote" "$branch"
     else
-        git -C "$dir" pull --rebase --autostash origin "$branch"
+        git -C "$dir" pull --rebase --autostash "$remote" "$branch"
     fi
 }
 

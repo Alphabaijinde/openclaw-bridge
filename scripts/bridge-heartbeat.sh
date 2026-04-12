@@ -13,7 +13,7 @@ HEARTBEAT_DIR="${BRIDGE_ROOT}/.heartbeat"
 mkdir -p "$HEARTBEAT_DIR"
 
 if [[ -d "${BRIDGE_ROOT}/.git" ]]; then
-    git -C "$BRIDGE_ROOT" pull --rebase origin "$BRIDGE_GIT_BRANCH" >/dev/null 2>&1 || true
+    git_pull_rebase "$BRIDGE_ROOT" "$BRIDGE_GIT_BRANCH" >/dev/null 2>&1 || true
 fi
 
 TIMESTAMP="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
@@ -32,9 +32,22 @@ if [[ -d "${BRIDGE_ROOT}/.git" ]]; then
         -c user.email="${BRIDGE_GIT_USER_EMAIL:-bridge@local}" \
         commit -m "chore(heartbeat): ${ROLE} alive at ${TIMESTAMP}" >/dev/null 2>&1 || true
     
+    remote="$(bridge_git_remote "$BRIDGE_ROOT")"
+    if [[ -z "$remote" ]]; then
+        exit 0
+    fi
+
     if [[ -n "${BRIDGE_SSH_KEY:-}" ]]; then
-        GIT_SSH_COMMAND="ssh -i '${BRIDGE_SSH_KEY}'" git -C "$BRIDGE_ROOT" push origin "$BRIDGE_GIT_BRANCH" >/dev/null 2>&1 || true
+        if [[ "$remote" == "origin" ]]; then
+            GIT_SSH_COMMAND="ssh -i '${BRIDGE_SSH_KEY}'" git -C "$BRIDGE_ROOT" push origin "$BRIDGE_GIT_BRANCH" >/dev/null 2>&1 || true
+        else
+            GIT_SSH_COMMAND="ssh -i '${BRIDGE_SSH_KEY}'" git -C "$BRIDGE_ROOT" push "$remote" "$BRIDGE_GIT_BRANCH" >/dev/null 2>&1 || true
+        fi
     else
-        git -C "$BRIDGE_ROOT" push origin "$BRIDGE_GIT_BRANCH" >/dev/null 2>&1 || true
+        if [[ "$remote" == "origin" ]]; then
+            git -C "$BRIDGE_ROOT" push origin "$BRIDGE_GIT_BRANCH" >/dev/null 2>&1 || true
+        else
+            git -C "$BRIDGE_ROOT" push "$remote" "$BRIDGE_GIT_BRANCH" >/dev/null 2>&1 || true
+        fi
     fi
 fi
