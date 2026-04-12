@@ -7,7 +7,7 @@
 
 ## Cron model
 
-Each side runs one cron job:
+Each side runs one cron entry:
 
 - `*/5 * * * * BRIDGE_DIR=<clone> BRIDGE_ROLE=<home|company> <clone>/scripts/bridge-pull-cron.sh`
 
