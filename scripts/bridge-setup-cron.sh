@@ -23,7 +23,6 @@ done
 ROLE="$(bridge_role)"
 CRON_COMMENT="# OpenClaw Bridge - ${ROLE} side"
 CRON_PULL="*/5 * * * * BRIDGE_DIR=${BRIDGE_ROOT} BRIDGE_ROLE=${ROLE} ${SCRIPT_DIR}/bridge-pull-cron.sh >> ${BRIDGE_ROOT}/logs/cron.log 2>&1 ${CRON_COMMENT}"
-CRON_HEARTBEAT="*/10 * * * * BRIDGE_DIR=${BRIDGE_ROOT} BRIDGE_ROLE=${ROLE} bash ${SCRIPT_DIR}/bridge-heartbeat.sh >> ${BRIDGE_ROOT}/logs/cron.log 2>&1 ${CRON_COMMENT}"
 
 setup_cron() {
     local current_cron
@@ -51,18 +50,15 @@ PY
     local new_cron
     if [[ -n "$cleaned_cron" ]]; then
         new_cron="${cleaned_cron}
-${CRON_PULL}
-${CRON_HEARTBEAT}"
+${CRON_PULL}"
     else
-        new_cron="${CRON_PULL}
-${CRON_HEARTBEAT}"
+        new_cron="${CRON_PULL}"
     fi
     
     echo "$new_cron" | crontab -
     
     log_info "Cron 配置完成 (${ROLE} 侧)"
-    log_info "Pull+Heartbeat: 每 5 分钟"
-    log_info "Heartbeat: 每 10 分钟"
+    log_info "Pull+Heartbeat: 每 5 分钟（heartbeat 由 pull cron 内部触发）"
     
     # 验证
     crontab -l | grep "OpenClaw Bridge"
