@@ -34,6 +34,7 @@ Each side runs one cron entry:
 - `scripts/bridge-lib.sh`
   - resolves repo paths and shared config
   - `git_pull_rebase()` uses `--rebase --autostash`
+  - falls back to `BRIDGE_GIT_REMOTE` when `origin` is not configured
 
 ## Why the old setup broke
 
