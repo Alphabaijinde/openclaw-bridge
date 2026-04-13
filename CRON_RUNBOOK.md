@@ -4,6 +4,16 @@
 
 - Home runtime: `/tmp/openclaw-bridge-home-sync`
 - Company runtime: `/tmp/openclaw-bridge-company-sync`
+- On macOS, cron may render the same locations as `/private/tmp/...`; both point to the same runtime trees.
+
+## Current files
+
+- `scripts/bridge-setup-cron.sh`
+- `scripts/bridge-pull-cron.sh`
+- `scripts/bridge-pull.sh`
+- `scripts/bridge-heartbeat.sh`
+- `scripts/bridge-lib.sh`
+- `bridge.env.example`
 
 ## Cron model
 
@@ -30,6 +40,7 @@ Each side runs one cron entry:
   - writes `.heartbeat/<role>.json`
   - pulls latest remote state with `git pull --rebase`
   - commits and pushes the heartbeat update
+  - falls back to `BRIDGE_GIT_REMOTE` if `origin` is missing
 
 - `scripts/bridge-lib.sh`
   - resolves repo paths and shared config
