@@ -219,6 +219,24 @@ BRIDGE_ROLE=home bash scripts/bridge-status.sh
 
 ## 当前状态 (2026-04-14)
 
+### 公司侧 (Linux - 当前配置)
+
+**当前 crontab 配置**:
+```bash
+*/5 * * * * /home/user/ai-tasks/bridge/scripts/bridge-pull-cron.sh
+```
+
+**角色识别方式**: 通过 `bridge.env` 文件中的 `BRIDGE_ROLE=company` 配置识别，不需要在 crontab 中设置环境变量。
+
+**bridge.env 配置内容**:
+```bash
+BRIDGE_ROLE=company
+OPENCLAW_SIDE=company
+BRIDGE_GIT_REMOTE=git@github.com:Alphabaijinde/openclaw-bridge.git
+```
+
+### 家里侧 (Mac - 待配置)
+
 | 侧别 | 最后心跳 | 状态 |
 |------|----------|------|
 | 公司 | 2026-04-14 06:40 | ✅ 在线 |
