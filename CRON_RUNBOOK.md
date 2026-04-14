@@ -1,74 +1,242 @@
 # Bridge cron / heartbeat runbook
 
-## Runtime layout
+## 概述
 
-- Home runtime: `/tmp/openclaw-bridge-home-sync`
-- Company runtime: `/tmp/openclaw-bridge-company-sync`
-- On macOS, cron may render the same locations as `/private/tmp/...`; both point to the same runtime trees.
+本系统通过 GitHub 仓库作为任务池，实现公司侧和家里侧双向任务流转。
 
-## Current files
+- **任务池仓库**: `ai-tasks` (或其他配置的任务仓库)
+- **任务状态目录**: `inbox/` (待处理) → `running/` (执行中) → `done/` (已完成)
+- **心跳文件**: `.heartbeat/{role}.json`
 
-- `scripts/bridge-setup-cron.sh`
-- `scripts/bridge-pull-cron.sh`
-- `scripts/bridge-pull.sh`
-- `scripts/bridge-heartbeat.sh`
-- `scripts/bridge-lib.sh`
-- `bridge.env.example`
+---
 
-## Cron model
+## Cron 配置
 
-Each side runs one cron entry:
-
-- `*/5 * * * * BRIDGE_DIR=<clone> BRIDGE_ROLE=<home|company> <clone>/scripts/bridge-pull-cron.sh`
-
-`bridge-pull-cron.sh` already calls `bridge-heartbeat.sh`, so we do not schedule a separate heartbeat cron anymore.
-
-## Script flow
-
-- `scripts/bridge-setup-cron.sh`
-  - installs the single pull cron for the current role
-  - removes old cron entries for that role before adding the new one
-
-- `scripts/bridge-pull-cron.sh`
-  - resolves its own path
-  - sources `bridge-lib.sh`
-  - acquires a portable directory lock at `.bridge-pull.lockdir`
-  - runs `bridge-pull.sh --execute --recover`
-  - then runs `bridge-heartbeat.sh`
-
-- `scripts/bridge-heartbeat.sh`
-  - writes `.heartbeat/<role>.json`
-  - pulls latest remote state with `git pull --rebase`
-  - commits and pushes the heartbeat update
-  - falls back to `BRIDGE_GIT_REMOTE` if `origin` is missing
-
-- `scripts/bridge-lib.sh`
-  - resolves repo paths and shared config
-  - `git_pull_rebase()` uses `--rebase --autostash`
-  - falls back to `BRIDGE_GIT_REMOTE` when `origin` is not configured
-
-## Why the old setup broke
-
-We saw a failure mode where both sides were alive locally, but each clone kept showing the other side as stale.
-
-Root causes:
-
-1. The old cron wrapper depended on `flock`, which is not available everywhere.
-2. The runtime clones were out of sync and some were in bad git states.
-3. A separate heartbeat cron raced with the pull cron and created extra contention.
-4. `bridge-status.sh` defaults to `home` unless `BRIDGE_ROLE` is set.
-
-## Recovery rule
-
-If a runtime clone gets out of sync, reseed it from the repaired source state, reinstall cron, and then verify the latest heartbeat files in both clones.
-
-## Verification
-
-Run these with the role explicitly set:
+### 公司侧 (Linux)
 
 ```bash
-BRIDGE_ROLE=home bash scripts/bridge-status.sh
-BRIDGE_ROLE=company bash scripts/bridge-status.sh
+# 任务拉取 + 心跳 (每5分钟一次，heartbeat 已内置)
+*/5 * * * * BRIDGE_DIR=/home/user/ai-tasks/bridge BRIDGE_ROLE=company /home/user/ai-tasks/bridge/scripts/bridge-pull-cron.sh >> /home/user/ai-tasks/bridge/logs/company-pull.log 2>&1
 ```
 
-Both sides are considered online when their own `.heartbeat/<role>.json` files update; the peer side may lag until the next pull cycle completes.
+### 家里侧 (Mac)
+
+**前置依赖**:
+```bash
+# 安装 jq (如果没有)
+brew install jq
+
+# 确认 gh 已登录 (用于 git credential)
+gh auth status
+```
+
+**配置 cron**:
+```bash
+# 方法 1: 使用 bridge-setup-cron.sh 自动配置
+BRIDGE_ROLE=home BRIDGE_DIR=/Users/user/openclaw/ai-tasks/bridge /Users/user/openclaw/ai-tasks/bridge/scripts/bridge-setup-cron.sh
+
+# 方法 2: 手动添加 cron
+crontab -e
+# 添加以下行:
+*/5 * * * * BRIDGE_DIR=/Users/user/openclaw/ai-tasks/bridge BRIDGE_ROLE=home /Users/user/openclaw/ai-tasks/bridge/scripts/bridge-pull-cron.sh >> /Users/user/openclaw/ai-tasks/bridge/logs/home-pull.log 2>&1
+```
+
+**注意**: Mac 上 cron 默认没有 PATH，需要在脚本中指定完整路径或设置环境变量。
+
+---
+
+## 心跳机制
+
+### 心跳文件位置
+
+```
+.heartbeat/
+├── company.json    # 公司侧心跳
+└── home.json       # 家里侧心跳
+```
+
+### 心跳内容示例
+
+```json
+{
+  "role": "company",
+  "last_heartbeat": "2026-04-14T06:40:37Z",
+  "hostname": "user",
+  "status": "alive"
+}
+```
+
+### 查看心跳状态
+
+```bash
+# 查看两边心跳
+cd /home/user/ai-tasks/bridge
+git pull --rebase
+cat .heartbeat/company.json
+cat .heartbeat/home.json
+```
+
+### 心跳更新时间
+
+- 频率: 每 5 分钟 (随 bridge-pull-cron.sh 一起执行)
+- 更新内容: 时间戳、主机名、状态
+- 推送: 每次心跳都会 git commit + push
+
+---
+
+## 锁机制
+
+### 锁文件位置
+
+- 目录锁 (当前实现): `.bridge-pull.lockdir/`
+- 旧版文件锁 (已废弃): `.bridge-pull.lock` (忽略即可)
+
+### 锁作用
+
+防止多个 cron 实例同时拉取任务导致冲突。
+
+### 故障时清理锁
+
+如果 cron 卡住，可以手动清理：
+
+```bash
+rm -rf /home/user/ai-tasks/bridge/.bridge-pull.lockdir
+```
+
+---
+
+## 日志位置
+
+| 侧别 | 日志文件 |
+|------|----------|
+| 公司 | `/home/user/ai-tasks/bridge/logs/company-pull.log` |
+| 公司 | `/home/user/ai-tasks/bridge/logs/company-heartbeat.log` |
+| 家里 | `/Users/user/openclaw/ai-tasks/bridge/logs/home-pull.log` |
+| 家里 | `/Users/user/openclaw/ai-tasks/bridge/logs/home-heartbeat.log` |
+
+---
+
+## 故障排查
+
+### 问题: cron 一直跳过不执行
+
+**症状**: 任务没有被拉取，日志显示 "Skipping - lock exists"
+
+**排查步骤**:
+
+1. 检查锁文件是否存在
+   ```bash
+   ls -la /home/user/ai-tasks/bridge/.bridge-pull.lockdir
+   ```
+
+2. 如果锁存在但没有进程在运行，手动删除
+   ```bash
+   rm -rf /home/user/ai-tasks/bridge/.bridge-pull.lockdir
+   ```
+
+3. 手动运行一次测试
+   ```bash
+   BRIDGE_DIR=/home/user/ai-tasks/bridge BRIDGE_ROLE=company /home/user/ai-tasks/bridge/scripts/bridge-pull-cron.sh
+   ```
+
+### 问题: 心跳没有推送到远程
+
+**症状**: 本地心跳文件更新了，但没有推送到 GitHub
+
+**排查步骤**:
+
+1. 检查 git remote 配置
+   ```bash
+   git remote -v
+   ```
+
+2. 检查 gh 认证状态 (公司侧 Linux)
+   ```bash
+   gh auth status
+   ```
+   - 如果显示 SSH，需要确认 remote 是 SSH URL
+   - 如果显示 HTTPS，需要确认 credential helper 正常
+
+3. 测试手动推送
+   ```bash
+   BRIDGE_DIR=/home/user/ai-tasks/bridge BRIDGE_ROLE=company bash /home/user/ai-tasks/bridge/scripts/bridge-heartbeat.sh
+   git push
+   ```
+
+### 问题: 家里侧 Mac cron 不运行
+
+**排查步骤**:
+
+1. 确认 cron 服务是否启用
+   ```bash
+   crontab -l
+   ```
+
+2. 检查 Mac 上 cron 是否有权限
+   ```bash
+   # Mac 需要在 System Settings > Privacy & Security > Full Disk Access 添加 cron
+   ```
+
+3. 检查脚本是否有执行权限
+   ```bash
+   chmod +x /Users/user/openclaw/ai-tasks/bridge/scripts/bridge-pull-cron.sh
+   ```
+
+4. 检查日志
+   ```bash
+   tail -f /Users/user/openclaw/ai-tasks/bridge/logs/home-pull.log
+   ```
+
+---
+
+## 常用命令
+
+```bash
+# 手动触发任务拉取 (公司侧)
+BRIDGE_DIR=/home/user/ai-tasks/bridge BRIDGE_ROLE=company /home/user/ai-tasks/bridge/scripts/bridge-pull-cron.sh
+
+# 手动触发心跳 (公司侧)
+BRIDGE_DIR=/home/user/ai-tasks/bridge BRIDGE_ROLE=company bash /home/user/ai-tasks/bridge/scripts/bridge-heartbeat.sh
+
+# 手动触发任务拉取 (家里侧 Mac)
+BRIDGE_DIR=/Users/user/openclaw/ai-tasks/bridge BRIDGE_ROLE=home /Users/user/openclaw/ai-tasks/bridge/scripts/bridge-pull-cron.sh
+
+# 查看任务队列状态
+cd /home/user/ai-tasks/bridge
+ls -la inbox/
+ls -la running/
+ls -la done/
+
+# 查看最近提交
+git log --oneline -10
+
+# 查看心跳状态
+BRIDGE_ROLE=company bash scripts/bridge-status.sh
+BRIDGE_ROLE=home bash scripts/bridge-status.sh
+```
+
+---
+
+## 当前状态 (2026-04-14)
+
+| 侧别 | 最后心跳 | 状态 |
+|------|----------|------|
+| 公司 | 2026-04-14 06:40 | ✅ 在线 |
+| 家里 | 2026-04-12 01:40 | ⚠️ 离线 (待配置) |
+
+### 待确认事项
+
+- [ ] 家里侧 Mac 的 cron 是否已配置？
+- [ ] 家里侧 Mac 上 gh 是否已登录？
+- [ ] 家里侧 Mac 上的 bridge 仓库路径是什么？
+
+---
+
+## 相关文件
+
+- `scripts/bridge-pull-cron.sh` - cron 包装脚本
+- `scripts/bridge-pull.sh` - 任务拉取主脚本
+- `scripts/bridge-heartbeat.sh` - 心跳更新脚本
+- `scripts/bridge-lib.sh` - 共享工具函数
+- `scripts/bridge-setup-cron.sh` - 自动配置 cron 脚本
+- `CRON_RUNBOOK.md` - 本文档
