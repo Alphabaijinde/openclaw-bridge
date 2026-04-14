@@ -250,6 +250,49 @@ BRIDGE_GIT_REMOTE=git@github.com:Alphabaijinde/openclaw-bridge.git
 
 ---
 
+## GitHub Trending 分析缺失问题
+
+### 问题描述
+
+最近几天 (4月11-14日) 的 GitHub Trending 分析为空，只有项目列表，没有深度分析。
+
+### 根因分析
+
+从 `fetch.log` 日志分析：
+```
+[2026-04-14 09:00:10] 尝试使用模型: opencode/big-pickle
+```
+模型启动后卡住，没有后续日志 (如 "已生成 AI 详细分析" 或 "超时/重试")。
+
+**可能原因**:
+1. `opencode/big-pickle` 模型在 cron 环境下启动慢/卡住
+2. 脚本逻辑问题 - 第一个模型失败后没有继续尝试备选模型
+3. 90秒 timeout 不够
+
+### 缺失的数据
+
+| 日期 | 状态 |
+|------|------|
+| 4月11日 | 缺失 (没有抓取) |
+| 4月12日 | ❌ 有列表无分析 |
+| 4月13日 | ❌ 有列表无分析 |
+| 4月14日 | ❌ 有列表无分析 |
+
+### 修复建议
+
+1. 手动运行 fetch.sh 补全分析:
+   ```bash
+   cd /home/user/ai-tools/github-trending
+   rm -f work_jszr_linux/AI趋势/2026-04-*-GitHub-Trending.md  # 清除旧文件
+   ./scripts/fetch.sh --analyze
+   ```
+
+2. 检查脚本中模型顺序是否正确遍历
+
+3. 考虑增加 timeout 或改用更快的模型
+
+---
+
 ## 相关文件
 
 - `scripts/bridge-pull-cron.sh` - cron 包装脚本
